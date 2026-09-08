@@ -1,0 +1,41 @@
+# ---- 操作系统 ----
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+desktop.ini
+
+# ---- 编辑器 / IDE ----
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ---- 凭据与密钥（T0：严禁把 token 提交进仓库）----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+secrets/
+
+# ---- 日志与临时文件 ----
+*.log
+logs/
+tmp/
+.tmp/
+*.bak
+
+# ---- 依赖与打包产物（将来打包为插件时用）----
+node_modules/
+dist/
+*.zip
+*.tgz
+
+# ---- 本地演练（dogfooding）产物 ----
+# 本仓库自跑 /iloop 时会生成 docs/issues/<N>/ 与 test/ 下的产物。
+# 默认纳入版本控制（作为闭环证据）；若只想留在本地，取消下面两行注释。
+# docs/issues/
+# test/
