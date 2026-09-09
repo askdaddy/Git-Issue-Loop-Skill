@@ -61,6 +61,15 @@ set -euo pipefail
 log_info()  { printf '[git-ops] %s\n' "$*"; }
 log_error() { printf '[git-ops][ERROR] %s\n' "$*" >&2; }
 
+# 细节日志：仅当 GIT_OPS_VERBOSE=1 时输出。
+# 排他清理会产生大量「标签不存在」噪音、CLI 成功时会吐裸 URL，
+# 默认静默以免淹没真正的错误；排查问题时设 GIT_OPS_VERBOSE=1 可还原全部细节。
+log_debug() {
+  if [[ "${GIT_OPS_VERBOSE:-0}" == "1" ]]; then
+    printf '[git-ops][debug] %s\n' "$*"
+  fi
+}
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -80,6 +89,7 @@ Commands:
   git-ops.sh issue status <num> <riper-*>          切换 RIPER 状态（排他）
   git-ops.sh issue label <num> add <label>         添加自由标签（上下文召回用）
   git-ops.sh issue label <num> remove <label>      移除自由标签
+  git-ops.sh labels init                            初始化标签体系（4 优先级 + 7 状态 + 3 重试，幂等）
   git-ops.sh platform                               打印检测到的托管平台
   git-ops.sh doctor                                 自检：CLI 安装与授权状态（缺失时输出指南）
 EOF
@@ -267,6 +277,7 @@ require_cli() {
 #   - priority 仅 planner 可设置；
 #   - status 按角色白名单校验；
 #   - label add/remove 不限角色，但不得触碰互斥标签族；
+#   - labels init 不限角色（属仓库级配置初始化，非 Issue 操作）；
 #   - create / comment / get 不限角色。
 # ---------------------------------------------------------------------------
 ROLE="${GIT_OPS_ROLE:-}"
@@ -276,6 +287,31 @@ ROLE="${GIT_OPS_ROLE:-}"
 PRIORITY_LABELS="p0 p1 p2 p3"
 # 状态：RIPER 各阶段 + 终态
 STATUS_LABELS="riper-research riper-innovation riper-plan riper-execute riper-review riper-verified riper-blocked"
+# 重试计数：QA 审查 FAIL 退回计划的次数（第四族，同样排他；达 3 次后须转 riper-blocked）
+# 存于 Issue 标签而非本地文件，以保证跨会话 / 跨机器 / 跨 agent 可见（Issue 为唯一事实来源）
+RETRY_LABELS="riper-retry-1 riper-retry-2 riper-retry-3"
+
+# 标签元数据：输出「颜色 描述」，颜色为 6 位 hex（不带 #），供 labels init 建标签时使用。
+# 覆盖四族全部 14 个标签（4 优先级 + 7 状态 + 3 重试）；未知标签返回非 0。
+label_meta() {
+  case "$1" in
+    p0) echo "B60205 艾森豪威尔：重要且紧急 — 立即处理，阻塞发布/线上事故" ;;
+    p1) echo "D93F0B 艾森豪威尔：重要不紧急 — 排期处理，核心价值与关键技术债" ;;
+    p2) echo "FBCA04 艾森豪威尔：紧急不重要 — 尽快处理但可委派，低价值高时限" ;;
+    p3) echo "CCCCCC 艾森豪威尔：不重要不紧急 — backlog，择机处理" ;;
+    riper-research)   echo "0052CC RIPER [R] 研究：PM 提炼 spec、判定优先级" ;;
+    riper-innovation) echo "5319E7 RIPER [I] 创新：PM 多方案对比与选型" ;;
+    riper-plan)       echo "1D76DB RIPER [P] 计划：PM 拆解原子任务，基线冻结" ;;
+    riper-execute)    echo "FEF2C0 RIPER [E] 执行：开发逐项落地 plan" ;;
+    riper-review)     echo "F9D0C4 RIPER [R] 审查：QA 黑盒验收" ;;
+    riper-verified)   echo "0E8A16 RIPER 终态：全部 PASS，由 QA 关闭 Issue" ;;
+    riper-blocked)    echo "B60205 RIPER 异常终态：重试超限或遭遇阻塞，需人工介入" ;;
+    riper-retry-1)    echo "FBCA04 RIPER 重试计数：审查 FAIL 退回 1 次（仅 QA 可递增）" ;;
+    riper-retry-2)    echo "D93F0B RIPER 重试计数：审查 FAIL 退回 2 次（仅 QA 可递增）" ;;
+    riper-retry-3)    echo "B60205 RIPER 重试计数：审查 FAIL 退回 3 次，已达上限须转 riper-blocked" ;;
+    *) return 1 ;;
+  esac
+}
 
 # 判定标签是否属于优先级族 / 状态族
 is_priority_label() {
@@ -415,6 +451,52 @@ cmd_issue_comment() {
 # 标签底层操作（各平台原生命令）
 # ---------------------------------------------------------------------------
 
+# 在仓库中创建标签（幂等）：不存在则创建，已存在则更新颜色与描述，两者均不报错。
+# 用法：raw_label_create <名称> <颜色(6位hex，不带#)> <描述>
+# 输出：向 stdout 打印 created / updated（供上层汇总）；两者均失败时 return 1。
+# 注：require_cli 成功路径静默，因此 stdout 只包含本函数的结果字串；
+#     内部 log_debug 必须重定向到 stderr，否则会污染上层 $(...) 捕获。
+raw_label_create() {
+  local name="$1" color="$2" desc="$3"
+  local __plat
+  __plat="$(detect_platform)" || exit 1
+  case "${__plat}" in
+    gh)
+      require_cli gh
+      if gh label create "${name}" --color "${color}" --description "${desc}" >/dev/null 2>&1; then
+        printf 'created'
+      elif gh label edit "${name}" --color "${color}" --description "${desc}" >/dev/null 2>&1; then
+        printf 'updated'
+      else
+        return 1
+      fi
+      ;;
+    glab)
+      require_cli glab
+      # glab 的 --color 需带 # 前缀
+      if glab label create "${name}" --color "#${color}" --description "${desc}" >/dev/null 2>&1; then
+        printf 'created'
+      elif glab label edit "${name}" --color "#${color}" --description "${desc}" >/dev/null 2>&1; then
+        printf 'updated'
+      else
+        return 1
+      fi
+      ;;
+    tea)
+      require_cli tea
+      # 降级声明（C2）：tea 的 labels 子命令不支持颜色与描述，仅能创建同名标签；
+      # 且无 label edit 能力，已存在时直接视为就绪。
+      if tea labels create "${name}" >/dev/null 2>&1; then
+        log_debug "tea 不支持标签颜色/描述，已降级为仅创建 '${name}'。" >&2
+        printf 'created'
+      else
+        log_debug "tea 标签 '${name}' 已存在（tea 无更新能力，跳过）。" >&2
+        printf 'updated'
+      fi
+      ;;
+  esac
+}
+
 # 给 Issue 添加标签
 raw_label_add() {
   local num="$1" label="$2"
@@ -423,17 +505,17 @@ raw_label_add() {
   case "${__plat}" in
     gh)
       require_cli gh
-      gh issue edit "${num}" --add-label "${label}"
+      gh issue edit "${num}" --add-label "${label}" >/dev/null
       ;;
     glab)
       require_cli glab
-      glab issue update "${num}" --label "${label}" 2>/dev/null \
-        || glab issue label "${num}" "${label}" # 新旧版本 glab 兼容
+      glab issue update "${num}" --label "${label}" >/dev/null 2>/dev/null \
+        || glab issue label "${num}" "${label}" >/dev/null # 新旧版本 glab 兼容
       ;;
     tea)
       require_cli tea
-      tea labels add "${label}" 2>/dev/null || true # 标签名不存在时先创建（可失败，忽略）
-      tea issues "${num}" --label "${label}"
+      tea labels add "${label}" >/dev/null 2>/dev/null || true # 标签名不存在时先创建（可失败，忽略）
+      tea issues "${num}" --label "${label}" >/dev/null
       ;;
   esac
 }
@@ -446,8 +528,8 @@ raw_label_remove() {
   case "${__plat}" in
     gh)
       require_cli gh
-      gh issue edit "${num}" --remove-label "${label}" 2>/dev/null \
-        || log_info "标签 '${label}' 已不存在或已移除。"
+      gh issue edit "${num}" --remove-label "${label}" >/dev/null 2>/dev/null \
+        || log_debug "标签 '${label}' 已不存在或已移除。"
       ;;
     glab)
       require_cli glab
@@ -458,16 +540,16 @@ raw_label_remove() {
                  | tr ',' '\n' | sed 's/^ *//;s/ *$//' \
                  | grep -vix "${label}" | paste -sd, -)"
       if [[ -z "${current}" ]]; then
-        glab issue update "${num}" --remove-label "${label}" 2>/dev/null \
-          || log_info "标签 '${label}' 已不存在或已移除。"
+        glab issue update "${num}" --remove-label "${label}" >/dev/null 2>/dev/null \
+          || log_debug "标签 '${label}' 已不存在或已移除。"
       else
-        glab issue update "${num}" --label "${current}"
+        glab issue update "${num}" --label "${current}" >/dev/null
       fi
       ;;
     tea)
       require_cli tea
-      tea issues "${num}" --unlabel "${label}" 2>/dev/null \
-        || log_info "标签 '${label}' 已不存在或已移除。"
+      tea issues "${num}" --unlabel "${label}" >/dev/null 2>/dev/null \
+        || log_debug "标签 '${label}' 已不存在或已移除。"
       ;;
   esac
 }
@@ -609,6 +691,45 @@ cmd_issue_reopen() {
 }
 
 # ---------------------------------------------------------------------------
+# 标签体系初始化：幂等创建/更新四族全部 14 个标签
+# 新仓库首次使用本 Skill 前必须执行；否则 issue priority / status 会因
+# 平台侧标签不存在而报 'p0' not found 并 exit 1（bootstrap 死锁）。
+# ---------------------------------------------------------------------------
+cmd_labels_init() {
+  # 不限角色，但仍走一次校验以拦截非法角色名
+  check_permission labels-init
+
+  local l meta color desc result ok=0 fail=0 total=0
+
+  for l in ${PRIORITY_LABELS} ${STATUS_LABELS} ${RETRY_LABELS}; do
+    total=$((total + 1))
+    if ! meta="$(label_meta "${l}")"; then
+      log_error "内部错误：标签 '${l}' 缺少元数据（label_meta 未覆盖）。"
+      fail=$((fail + 1))
+      continue
+    fi
+    color="${meta%% *}"
+    desc="${meta#* }"
+    if result="$(raw_label_create "${l}" "${color}" "${desc}")"; then
+      printf '  %-8s %-18s #%s\n' "${result}" "${l}" "${color}"
+      ok=$((ok + 1))
+    else
+      printf '  %-8s %-18s\n' "FAILED" "${l}"
+      log_error "标签 '${l}' 创建/更新失败（检查 CLI 权限：GitHub 需 repo scope）。"
+      fail=$((fail + 1))
+    fi
+  done
+
+  printf '\n'
+  if [[ "${fail}" -eq 0 ]]; then
+    log_info "标签体系就绪：${ok}/${total}（优先级 4 + 状态 7 + 重试 3）。"
+  else
+    log_error "标签体系不完整：成功 ${ok}/${total}，失败 ${fail} 个。"
+    exit 1
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # 自检：平台路由 + CLI 安装 + 授权状态；未就绪时输出指南并 exit 1
 # 建议在进入 RIPER 循环前先跑一次
 # ---------------------------------------------------------------------------
@@ -672,6 +793,13 @@ main() {
       plat="$(detect_platform)" || exit 1
       log_info "检测到平台 CLI：${plat}"
       printf '%s\n' "${plat}"
+      ;;
+    labels)
+      # 仓库级标签体系初始化：仅接受 `labels init`
+      if [[ $# -ne 1 || "$1" != "init" ]]; then
+        usage
+      fi
+      cmd_labels_init
       ;;
     doctor)
       [[ $# -eq 0 ]] || usage
