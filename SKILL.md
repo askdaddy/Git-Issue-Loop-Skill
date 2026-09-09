@@ -24,7 +24,7 @@ description: >-
 
 1. **目标 Issue**：编号是多少？若用户不确定，先跑 `./scripts/git-ops.sh doctor`，再列出 open issues（按优先级 p0→p3 排序）供选择。
 2. **执行范围**：完整闭环（R→I→P→E→R）/ 只到计划（R→I→P）/ 只做验收（R 审查）/ 仅环境自检（doctor）。
-3. **落盘确认**：文档默认 `docs/issues/<N>/`、QA 测试脚本默认 `test/` —— 是否沿用默认（用户显性指定时以用户为准）。
+3. **落盘确认**：阶段文档主路径写回 Issue 评论，仅当远程 Issue 不可用时才降级写入本地 `docs/issues/<N>/`（降级目录是否沿用默认）；QA 测试脚本默认 `test/` —— 是否沿用默认（用户显性指定时以用户为准）。
 
 问清后进入 §3.0 前置自检与 RIPER 循环。
 容错：若用户在 `/iloop` 后直接带了编号或阶段意图（如 `/iloop 42`、"只排 plan"），直接采用，不再追问该项。
@@ -32,12 +32,11 @@ description: >-
 ## T0 铁律（最高优先级，与任何规则冲突时以此为准）
 
 1. **PM 与 QA 不得改动任何业务代码**——只读代码。违反即 T0 事故。
-   - PM 的唯一可写区域：`docs/`（文档产出）。
+   - PM 的唯一可写文件区域：`docs/`，且**仅用于降级落盘**（见铁律 3；远程可用时产出一律评论写回 Issue）。
    - QA 的唯一可写区域：`test/`（黑盒测试脚本），禁止改动被测业务代码。
    - 开发是唯一有权改动业务代码的角色，且**仅限 `plan.md` 覆盖范围**。
-2. **PM 产出的文档默认落盘到项目的 `docs/` 目录**（本 Skill 约定为 `docs/issues/<N>/`），除非用户显性指定其他路径。
-3. **SPEC 必须定义在 Issue 里**：PM 在 [R] 阶段把 spec 全文以 Issue 评论形式写入；
-   **fallback** 才是本地 markdown（`docs/issues/<N>/spec.md`）+ 在 Issue 评论中引用该文件路径。
+2. **PM 产出的文档主路径写回 Issue**：spec / design / plan 全文以 Issue 评论形式写入；远程可用时**禁止额外落盘本地副本（不做双写冗余）**。
+3. **降级 fallback**：仅当远程 Issue 不可用（CLI 缺失 / 未授权 / 平台不支持 / API 调用失败 / 单条内容超出平台限制）时，才降级写入本地 `docs/issues/<N>/`（spec.md / design.md / plan.md / verify-report.md，基于 `templates/` 填充；用户显性指定其他路径时以用户为准），并在 Issue 恢复可用后于评论中引用该文件路径。
 4. **QA 偏向黑盒测试**：优先从外部可观测行为验证（CLI / API / 端到端），不深入实现细节做白盒断言。
    如需编写测试脚本，**默认生成到项目的 `test/` 目录**，除非用户显性指定其他路径。
 5. **每个 Issue 必须有优先级**：由 PM 在 [R] 阶段按艾森豪威尔矩阵判定并设置 `p0`~`p3`；
@@ -48,8 +47,8 @@ description: >-
 
 ## 0. 核心约定
 
-- **唯一事实来源**：Issue（正文 + 评论 + 标签）为主，本地文档为持久化副本与 fallback。
-- **文档落盘位置**：默认 `docs/issues/<N>/`（spec.md / design.md / plan.md / verify-report.md），基于 `templates/` 填充；用户显性指定时以用户为准。
+- **唯一事实来源**：Issue（正文 + 评论 + 标签）为主；本地 `docs/issues/<N>/` 仅为**降级 fallback，不是持久化副本**——远程可用时不得双写。
+- **降级落盘位置**：`docs/issues/<N>/`（spec.md / design.md / plan.md / verify-report.md），基于 `templates/` 填充，仅当远程 Issue 不可用时使用；用户显性指定时以用户为准。
 - **测试脚本位置**：QA 的黑盒测试脚本默认落 `test/`；用户显性指定时以用户为准。
 - **Git 操作**：一律通过 `scripts/git-ops.sh` 执行，禁止直接调用 `gh` / `glab` / `tea`。Agent 调用时**必须携带 `--role <当前角色>`**，脚本按 §1.1 权限矩阵与 §1.2 标签体系硬性校验。
 - **平台路由**：脚本通过 `git remote -v` 自动检测并路由到对应 CLI，Agent 无需关心托管平台差异。
@@ -158,8 +157,8 @@ Issue(编号 N)
 4. 切换状态：`./scripts/git-ops.sh --role planner issue status <N> riper-research`。
 5. 阅读正文与全部评论，**只读**拉取相关代码上下文（涉及文件、模块、依赖）。
 6. 按 `templates/spec.md` 提炼规范：原始需求、上下文代码、核心约束、澄清假设。
-   - **主路径**：spec 全文以评论写入 Issue → `./scripts/git-ops.sh --role planner issue comment <N> "<spec 全文>"`；
-   - **fallback**（平台不支持 / 内容过长时）：写入 `docs/issues/<N>/spec.md`，并在 Issue 评论中引用该文件路径。
+   - **主路径**：spec 全文以评论写入 Issue → `./scripts/git-ops.sh --role planner issue comment <N> "<spec 全文>"`，不落盘本地；
+   - **降级 fallback**（CLI 缺失 / 未授权 / 平台不支持 / API 失败 / 内容超限时）：写入 `docs/issues/<N>/spec.md`，并在 Issue 恢复后评论引用该文件路径。
 7. 若需求存在无法用假设消解的歧义，在 Issue 下评论提问并暂停循环，等待用户回复。
 
 ### 3.2 [I] 创新阶段（Innovation）— PM
@@ -167,7 +166,7 @@ Issue(编号 N)
 1. **保持 PM 角色**（若切换过会话，重新读取 `roles/planner.md`）。
 2. 切换状态：`./scripts/git-ops.sh --role planner issue status <N> riper-innovation`。
 3. 基于 spec 思考**至少两种**技术方案，按复杂度、风险、可测性、可维护性、与现有代码契合度对比，选定最终方案并说明理由。
-4. 填充 `docs/issues/<N>/design.md`（基于 `templates/design.md`），并将方案结论评论写回 Issue。
+4. design 全文评论写回 Issue（主路径，基于 `templates/design.md` 组织）；仅当远程 Issue 不可用时降级写入 `docs/issues/<N>/design.md`。
 5. **全程只读代码，不得产出或修改任何实现代码（T0）。**
 
 ### 3.3 [P] 计划阶段（Plan）— PM
@@ -175,7 +174,7 @@ Issue(编号 N)
 1. **保持 PM 角色**。
 2. 切换状态：`./scripts/git-ops.sh --role planner issue status <N> riper-plan`。
 3. 基于 design 拆解**极细粒度**原子任务：每步只做一件事，含编号、涉及文件、逻辑说明、验收标准、完成状态 `[ ]`。
-4. 填充 `docs/issues/<N>/plan.md`（基于 `templates/plan.md`）。
+4. **主路径不落盘**：plan 随下一步的合并评论写回 Issue；仅当远程 Issue 不可用时降级填充 `docs/issues/<N>/plan.md`（基于 `templates/plan.md`）。
 5. 将 spec、design、plan 三份内容合并评论写回 Issue：
    `./scripts/git-ops.sh --role planner issue comment <N> "<三份文档合并内容>"`。
 6. 计划写回 Issue 后即视为**冻结基线**；后续修改必须走"中断→回退→更新→再同步"流程，并登记在 plan 的"计划修订记录"中。
@@ -184,8 +183,9 @@ Issue(编号 N)
 
 1. **加载角色**：读取 `roles/developer.md`，切换为开发。
 2. 切换状态：`./scripts/git-ops.sh --role developer issue status <N> riper-execute`。
-3. 严格逐项执行 `plan.md`：
-   - 每完成一项将 `[ ]` 改为 `[x]` 并落盘更新 `plan.md`；
+3. 严格逐项执行计划：
+   - 主路径（plan 在 Issue 评论中）：每完成一项（或按合理批次）将勾选进度评论同步到 Issue；
+   - 降级模式（存在本地 `docs/issues/<N>/plan.md`）：每完成一项将 `[ ]` 改为 `[x]` 并落盘更新；
    - 遵守 SDD 原则：发现计划有误 → 中断 → 回退 Plan 阶段（PM 修订）→ 再继续；
    - 遭遇无法推进的阻塞 → `./scripts/git-ops.sh --role developer issue status <N> riper-blocked` 并评论说明。
 4. 按仓库既有规范提交代码，提交信息引用 Issue 编号（如 `... (#N)`）。
@@ -194,10 +194,10 @@ Issue(编号 N)
 ### 3.5 [R] 审查阶段（Review）— QA
 
 1. **加载角色**：读取 `roles/reviewer.md`，切换为 QA。
-2. 对照 `plan.md` 每一步的验收标准，**以黑盒方式**执行测试与代码审查（读代码属只读，禁止修改业务代码，T0）。
+2. 对照计划（Issue 评论中的 plan，或降级产生的本地 `plan.md`）每一步的验收标准，**以黑盒方式**执行测试与代码审查（读代码属只读，禁止修改业务代码，T0）。
 3. 如需编写测试脚本，默认生成到 `test/` 目录（用户显性指定时以用户为准）。
-4. 填充 `docs/issues/<N>/verify-report.md`（基于 `templates/verify-report.md`）：逐项判定、证据、失败原因分析。
-5. 将 verify-report 全文评论写回 Issue。
+4. 按 `templates/verify-report.md` 生成 verify-report 全文并评论写回 Issue：逐项判定、证据、失败原因分析；
+5. 仅当远程 Issue 不可用时降级写入 `docs/issues/<N>/verify-report.md`，恢复后在评论中引用。
 
 ### 3.6 状态判定（Loop Control）
 
@@ -208,7 +208,7 @@ Issue(编号 N)
 - **存在 FAIL**：
   1. 计入重试计数（**防死循环：最多重试 3 次**）；
   2. QA 退回计划：`./scripts/git-ops.sh --role reviewer issue status <N> riper-plan`，并评论失败分析；
-  3. PM 修订 `plan.md`（针对失败项补充/修正步骤）并同步评论；
+  3. PM 修订计划（主路径在 Issue 评论中修订；降级模式下修订本地 `plan.md`）并同步评论；
   4. 重新走 [E] → [R]。
 - **重试 3 次仍有 FAIL**：停止循环，`./scripts/git-ops.sh --role reviewer issue status <N> riper-blocked`，在 Issue 下评论说明卡点，等待人工介入。
 

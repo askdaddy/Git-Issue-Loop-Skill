@@ -53,4 +53,4 @@
 - [ ] **重试已达 3 次仍有 FAIL** → 状态 `riper-blocked`，等待人工介入
 
 ---
-*本报告全文将作为 Issue 评论写回。*
+*本报告全文以 Issue 评论写回（主路径）；仅远程不可用时降级落盘 `docs/issues/<N>/verify-report.md`。*

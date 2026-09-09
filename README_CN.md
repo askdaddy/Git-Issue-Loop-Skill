@@ -4,7 +4,7 @@
 
 `iloop` 是一个面向 Agent 的 Issue 驱动 RIPER 研发闭环 Skill：
 **研究（Research）→ 创新（Innovation）→ 计划（Plan）→ 执行（Execute）→ 审查（Review）**。
-它以 Git Issue 的正文、评论和标签为唯一事实来源，同时保留本地 Markdown 文档作为持久化工作副本和 fallback。
+它以 Git Issue 的正文、评论和标签为唯一事实来源；本地 Markdown 文档（`docs/issues/<N>/`）仅在远程 Issue 不可用时作为降级 fallback，不做双写冗余。
 
 Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `gh`、`glab`、`tea`。
 

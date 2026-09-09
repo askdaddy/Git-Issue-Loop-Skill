@@ -4,8 +4,9 @@
 
 `iloop` is an Agent Skill for running an issue-driven RIPER engineering loop:
 **Research → Innovation → Plan → Execute → Review**. It treats the Git Issue
-body, comments, and labels as the source of truth, while keeping local Markdown
-documents as durable working copies and fallbacks.
+body, comments, and labels as the source of truth; local Markdown documents in
+`docs/issues/<N>/` are used only as a degraded fallback when the remote Issue
+platform is unavailable, never as redundant duplicates.
 
 The Skill works with GitHub, GitLab, Gitea, and Forgejo through their official
 CLIs: `gh`, `glab`, and `tea`.
