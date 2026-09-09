@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "skill": {
+    "name": "iloop",
+    "entry": "SKILL.md",
+    "requiredPaths": [
+      "SKILL.md",
+      "scripts/git-ops.sh",
+      "roles/planner.md",
+      "roles/developer.md",
+      "roles/reviewer.md",
+      "templates/spec.md",
+      "templates/design.md",
+      "templates/plan.md",
+      "templates/verify-report.md",
+      "references/cli-setup.md"
+    ]
+  },
+  "distribution": {
+    "repository": "https://github.com/askdaddy/Git-Issue-Loop-Skill.git",
+    "stableTagPattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$",
+    "defaultChannel": "latest-stable",
+    "sourceBranch": "main"
+  },
+  "installation": {
+    "defaultTarget": "~/.agent/skills/iloop",
+    "stagingPrefix": ".iloop.staging-",
+    "backupPrefix": "iloop.backup-",
+    "conflictPolicy": "fail-on-foreign-or-dirty-install",
+    "updatePolicy": "stage-validate-backup-switch",
+    "postInstall": {
+      "frontmatterName": "iloop",
+      "executablePaths": [
+        "scripts/git-ops.sh"
+      ],
+      "reportResolvedTagAndCommit": true
+    }
+  }
+}
