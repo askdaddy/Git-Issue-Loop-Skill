@@ -225,11 +225,11 @@ Issue(编号 N)
 
 ## 5. 安装与注册（让 `/iloop` 生效）
 
-本 Skill 以 GitHub 仓库分发。默认安装位置为 `~/.agent/skills/iloop`，目录名必须与 frontmatter 的 `name`（`iloop`）一致。面向 Agent 的安装入口、版本解析和安全切换协议见仓库根目录的 `INSTALL.md`；机器可读约束见 `skill-manifest.json`。
+本 Skill 以 GitHub 仓库分发。默认安装位置为 `~/.agents/skills/iloop`，目录名必须与 frontmatter 的 `name`（`iloop`）一致。面向 Agent 的安装入口、版本解析和安全切换协议见仓库根目录的 `INSTALL.md`；机器可读约束见 `skill-manifest.json`。
 
 **用户只需说一句话**：
 
-> 请从 `https://github.com/askdaddy/Git-Issue-Loop-Skill.git` 安装最新版 `iloop` 到 `~/.agent/skills/iloop`；若已有同源安装则安全更新，若目录非同源或存在本地修改则停止并报告；完成后验证 `SKILL.md`。
+> 请从 `https://github.com/askdaddy/Git-Issue-Loop-Skill.git` 安装最新版 `iloop` 到 `~/.agents/skills/iloop`；若已有同源安装则安全更新，若目录非同源或存在本地修改则停止并报告；完成后验证 `SKILL.md`。
 
 其中“最新版”由 Agent 解析为远端最高的稳定 `vX.Y.Z` 标签（忽略 `-alpha`、`-beta`、`-rc` 等预发布标签），而不是直接跟踪 `main`。实际安装完成后，Agent 必须报告解析到的 tag 和 commit SHA。
 

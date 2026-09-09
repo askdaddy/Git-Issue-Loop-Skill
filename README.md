@@ -26,7 +26,7 @@ CLIs: `gh`, `glab`, and `tea`.
 
 Give a Git-capable Agent this single instruction:
 
-> Install the latest `iloop` Skill from `https://github.com/askdaddy/Git-Issue-Loop-Skill.git` into `~/.agent/skills/iloop`. Safely update an existing installation only when it is from the same repository and has no local changes; otherwise stop and report the conflict. Verify `SKILL.md` after installation.
+> Install the latest `iloop` Skill from `https://github.com/askdaddy/Git-Issue-Loop-Skill.git` into `~/.agents/skills/iloop`. Safely update an existing installation only when it is from the same repository and has no local changes; otherwise stop and report the conflict. Verify `SKILL.md` after installation.
 
 “Latest” means the highest stable `vX.Y.Z` Git tag. It never means tracking
 `main` or installing an alpha, beta, or release candidate. The Agent should
@@ -42,12 +42,12 @@ The full staging, validation, backup, update, and rollback protocol is in
 
 ## Get started
 
-1. Refresh the Agent host so that it discovers `~/.agent/skills/iloop`.
+1. Refresh the Agent host so that it discovers `~/.agents/skills/iloop`.
 2. Open the target Git repository and run the environment check from that
    repository root:
 
    ```bash
-   ~/.agent/skills/iloop/scripts/git-ops.sh doctor
+   ~/.agents/skills/iloop/scripts/git-ops.sh doctor
    ```
 
 3. Complete any reported CLI installation or authentication step yourself; do
@@ -58,12 +58,12 @@ The full staging, validation, backup, update, and rollback protocol is in
 For an initial label setup in a repository, run:
 
 ```bash
-~/.agent/skills/iloop/scripts/git-ops.sh labels init
+~/.agents/skills/iloop/scripts/git-ops.sh labels init
 ```
 
 ## Requirements
 
-- Git and an Agent host that loads Skills from `~/.agent/skills/`.
+- Git and an Agent host that loads Skills from `~/.agents/skills/`.
 - macOS, or Windows running the supplied shell script from Git Bash. Linux is
   not currently a supported runtime target.
 - The official Issue CLI for the target remote: `gh` for GitHub, `glab` for

@@ -23,7 +23,7 @@
     "sourceBranch": "main"
   },
   "installation": {
-    "defaultTarget": "~/.agent/skills/iloop",
+    "defaultTarget": "~/.agents/skills/iloop",
     "stagingPrefix": ".iloop.staging-",
     "backupPrefix": "iloop.backup-",
     "conflictPolicy": "fail-on-foreign-or-dirty-install",

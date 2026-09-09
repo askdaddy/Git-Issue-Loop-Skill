@@ -20,7 +20,7 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
 
 将下面这一句话交给能够操作 Git 的 Agent：
 
-> 请从 `https://github.com/askdaddy/Git-Issue-Loop-Skill.git` 安装最新版 `iloop` 到 `~/.agent/skills/iloop`；若已有同源安装则仅在无本地修改时安全更新，否则停止并报告冲突；安装完成后验证 `SKILL.md`。
+> 请从 `https://github.com/askdaddy/Git-Issue-Loop-Skill.git` 安装最新版 `iloop` 到 `~/.agents/skills/iloop`；若已有同源安装则仅在无本地修改时安全更新，否则停止并报告冲突；安装完成后验证 `SKILL.md`。
 
 这里的“最新版”指远端最高的稳定 `vX.Y.Z` Git tag，不跟踪 `main`，也不安装 alpha、beta 或 RC 等预发布版本。成功后，Agent 应报告实际解析的 tag 与 commit SHA。
 
@@ -30,11 +30,11 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
 
 ## 快速开始
 
-1. 刷新 Agent 宿主会话，使其发现 `~/.agent/skills/iloop`。
+1. 刷新 Agent 宿主会话，使其发现 `~/.agents/skills/iloop`。
 2. 打开目标 Git 仓库，并在该仓库根目录执行环境自检：
 
    ```bash
-   ~/.agent/skills/iloop/scripts/git-ops.sh doctor
+   ~/.agents/skills/iloop/scripts/git-ops.sh doctor
    ```
 
 3. 若自检提示缺少 CLI 或未授权，请由使用者自行完成安装和授权；不要将 token 写入仓库，也不要要求 Agent 代填凭据。
@@ -43,12 +43,12 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
 首次在一个仓库中使用时，可初始化标签体系：
 
 ```bash
-~/.agent/skills/iloop/scripts/git-ops.sh labels init
+~/.agents/skills/iloop/scripts/git-ops.sh labels init
 ```
 
 ## 运行要求
 
-- Git，以及会从 `~/.agent/skills/` 加载 Skill 的 Agent 宿主。
+- Git，以及会从 `~/.agents/skills/` 加载 Skill 的 Agent 宿主。
 - macOS，或在 Git Bash 中运行随附脚本的 Windows。当前尚未声明支持 Linux。
 - 与目标 remote 对应的官方 Issue CLI：GitHub 使用 `gh`，GitLab 使用 `glab`，Gitea / Forgejo 使用 `tea`。
 - 一个已完成授权、且有 Issue 与标签读写权限的 CLI 账号。
