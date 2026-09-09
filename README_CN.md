@@ -4,6 +4,7 @@
 
 `iloop` 是一个面向 Agent 的 Issue 驱动 RIPER 研发闭环 Skill：
 **研究（Research）→ 创新（Innovation）→ 计划（Plan）→ 执行（Execute）→ 审查（Review）**。
+给一句目标也可以：Planner 会先把目标整理成草稿、经你确认后登记为 Issue，再进入闭环（目标直入）。
 它以 Git Issue 的正文、评论和标签为唯一事实来源；本地 Markdown 文档（`docs/issues/<N>/`）仅在远程 Issue 不可用时作为降级 fallback，不做双写冗余。
 
 Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `gh`、`glab`、`tea`。
@@ -11,6 +12,7 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
 ## 提供的能力
 
 - `/iloop` 入口，可执行完整 RIPER 闭环、仅计划、验收或环境自检。
+- 目标直入：给 `/iloop` 一句目标而非 Issue 编号，Planner 会整理草稿、经确认后创建 Issue 并设优先级，再从研究阶段进入闭环。
 - 严格角色分工：Planner 负责规范和计划，Developer 按已批准计划实施，Reviewer 进行黑盒验收。
 - 规格驱动交付：计划是冻结契约；任何计划变更都必须显式退回计划阶段。
 - 优先级（`p0`–`p3`）和 RIPER 状态均使用互斥的 Issue 标签族表达。

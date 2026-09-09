@@ -3,7 +3,9 @@
 [简体中文](README_CN.md)
 
 `iloop` is an Agent Skill for running an issue-driven RIPER engineering loop:
-**Research → Innovation → Plan → Execute → Review**. It treats the Git Issue
+**Research → Innovation → Plan → Execute → Review**. A plain goal works too:
+the Planner drafts, confirms, and files it as an issue before the loop starts
+(goal bootstrap). It treats the Git Issue
 body, comments, and labels as the source of truth; local Markdown documents in
 `docs/issues/<N>/` are used only as a degraded fallback when the remote Issue
 platform is unavailable, never as redundant duplicates.
@@ -15,6 +17,9 @@ CLIs: `gh`, `glab`, and `tea`.
 
 - A `/iloop` entry point for a complete RIPER loop, planning-only work, review,
   or environment diagnostics.
+- Goal bootstrap: hand `/iloop` a plain goal instead of an issue number, and
+  the Planner drafts it, confirms with you, files the issue, and enters the
+  loop from Research.
 - Strict role separation: Planner owns specification and planning, Developer
   implements the approved plan, and Reviewer performs black-box acceptance.
 - Spec-driven delivery: the plan is a frozen contract and changes to it require
