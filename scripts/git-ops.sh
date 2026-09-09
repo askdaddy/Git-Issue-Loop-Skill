@@ -403,6 +403,59 @@ check_permission() {
 # 子命令实现
 # ---------------------------------------------------------------------------
 
+# 列出 Issue：输出机读中间格式，每行「编号<TAB>状态<TAB>标题<TAB>标签(逗号分隔)」
+# 用法：raw_issue_list <open|closed|all>
+# 降级声明（C2）：仅 gh 能取到标签列；glab / tea 的列表输出不含标签，
+# 此时第四列输出空字串，由上层 cmd_issue_list 标注「(标签不可用)」并禁用标签类筛选。
+raw_issue_list() {
+  local state="$1"
+  local __plat
+  __plat="$(detect_platform)" || exit 1
+  case "${__plat}" in
+    gh)
+      require_cli gh
+      # gh 内置 --jq，无需外部 jq（C7）；@tsv 保证四列以 TAB 分隔
+      gh issue list --state "${state}" --limit 200 \
+        --json number,title,labels,state \
+        --jq '.[] | [.number, .state, .title, ([.labels[].name] | join(","))] | @tsv'
+      ;;
+    glab)
+      require_cli glab
+      log_debug "glab 列表输出不含标签列，已降级：--status / --priority 筛选在本平台不可用。" >&2
+      # glab 默认仅列 open；--closed 列已关闭；--all 列全部
+      local glab_flag=""
+      case "${state}" in
+        closed) glab_flag="--closed" ;;
+        all)    glab_flag="--all" ;;
+      esac
+      # 输出形如：#12  标题文本；提取编号与标题，状态列用入参回填
+      glab issue list ${glab_flag} 2>/dev/null \
+        | sed -n 's/^#\([0-9][0-9]*\)[[:space:]][[:space:]]*\(.*\)$/\1	\2/p' \
+        | while IFS="$(printf '\t')" read -r n t; do
+            printf '%s\t%s\t%s\t\n' "${n}" "${state}" "${t}"
+          done
+      ;;
+    tea)
+      require_cli tea
+      log_debug "tea 列表输出不含标签列，已降级：--status / --priority 筛选在本平台不可用。" >&2
+      # tea 的 --state 仅支持 open / closed；all 时不传该参数
+      if [[ "${state}" == "all" ]]; then
+        tea issues 2>/dev/null \
+          | sed -n 's/#\([0-9][0-9]*\)[[:space:]][[:space:]]*\(.*\)$/\1	\2/p' \
+          | while IFS="$(printf '\t')" read -r n t; do
+              printf '%s\t%s\t%s\t\n' "${n}" "${state}" "${t}"
+            done
+      else
+        tea issues --state "${state}" 2>/dev/null \
+          | sed -n 's/#\([0-9][0-9]*\)[[:space:]][[:space:]]*\(.*\)$/\1	\2/p' \
+          | while IFS="$(printf '\t')" read -r n t; do
+              printf '%s\t%s\t%s\t\n' "${n}" "${state}" "${t}"
+            done
+      fi
+      ;;
+  esac
+}
+
 # 获取 Issue 详情：gh/glab/tea 均支持 `issue view <num> --comments`
 cmd_issue_get() {
   local num="$1"
