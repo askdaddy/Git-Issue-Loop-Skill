@@ -14,7 +14,8 @@
       "templates/design.md",
       "templates/plan.md",
       "templates/verify-report.md",
-      "references/cli-setup.md"
+      "references/cli-setup.md",
+      "references/lazy-ladder.md"
     ]
   },
   "distribution": {

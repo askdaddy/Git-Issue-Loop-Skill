@@ -79,9 +79,10 @@ description: >-
 角色切换规则：
 
 1. Agent **必须先完整读取** `roles/` 目录下对应角色文件的全部内容。
-2. 严格按照文件中的指令设定当前的角色、语气、行为边界和约束，直到本阶段结束。
-3. 角色文件可被用户随时修改；每次进入阶段都重新读取，**不得缓存上一次的角色设定**。
-4. 未完成角色加载前，禁止产出任何该阶段的工作成果。
+2. 进入 **[I] / [P] / [E] / [R]审查** 之前，还必须先完整读取 `references/lazy-ladder.md`（最少代码梯子）。[G]/[R]研究 不读。
+3. 严格按照文件中的指令设定当前的角色、语气、行为边界和约束，直到本阶段结束。
+4. 角色文件可被用户随时修改；每次进入阶段都重新读取，**不得缓存上一次的角色设定**。
+5. 未完成角色加载前，禁止产出任何该阶段的工作成果。
 
 ### 1.1 Issue 操作权限矩阵
 
@@ -124,7 +125,7 @@ description: >-
 
 ## 2. SDD 核心原则（Spec-Driven Development，不可违反）
 
-1. **计划即契约**：Execute 阶段必须严格逐条执行 `plan.md` 中的步骤，**禁止跳过、禁止合并、禁止自由发挥、禁止添加计划外功能**。
+1. **计划即契约**：Execute 阶段必须逐条满足 `plan.md` 中的步骤与验收标准，**禁止跳过、禁止合并、禁止添加计划外功能**。HOW（实现路径）由 `references/lazy-ladder.md` 约束：在验收范围内取更高 rung 的最短 diff；合法改道须按该文件格式评论。验收标准冻结 WHAT；涉及文件与逻辑说明是建议，不是牢笼。
 2. **计划有误必回退**：发现计划有误（缺步骤、错文件、顺序不对）必须：立即**中断执行** → 退回 Plan 阶段更新 `plan.md` 并同步评论到 Issue → 再从更新后的步骤继续。严禁"边改边做、事后补计划"。
 3. **验收只认计划**：Review 阶段只依据 `plan.md` 中的验收标准判定 PASS/FAIL，不接受"代码能跑就算过"。
 4. **文档先行**：任何代码提交之前，对应的 spec / design / plan 必须已经存在且填充完整。
@@ -262,7 +263,7 @@ Issue(编号 N)
 
 1. **保持 PM 角色**（若切换过会话，重新读取 `roles/planner.md`）。
 2. 切换状态：`./scripts/git-ops.sh --role planner issue status <N> riper-innovation`。
-3. 基于 spec 思考**至少两种**技术方案，按复杂度、风险、可测性、可维护性、与现有代码契合度对比，选定最终方案并说明理由。
+3. 基于 spec 思考**至少两种**技术方案，按复杂度、风险、可测性、可维护性、与现有代码契合度、**代码量**、**是否新依赖**对比，选定最终方案并说明理由（先读 `references/lazy-ladder.md`）。
 4. design 全文评论写回 Issue（主路径，基于 `templates/design.md` 组织）；仅当远程 Issue 不可用时降级写入 `docs/issues/<N>/design.md`。
 5. **全程只读代码，不得产出或修改任何实现代码（T0）。**
 
@@ -270,7 +271,7 @@ Issue(编号 N)
 
 1. **保持 PM 角色**。
 2. 切换状态：`./scripts/git-ops.sh --role planner issue status <N> riper-plan`。
-3. 基于 design 拆解**极细粒度**原子任务：每步只做一件事，含编号、涉及文件、逻辑说明、验收标准、完成状态 `[ ]`。
+3. 基于 design 拆解**极细粒度**原子任务：每步只做一件事，含编号、涉及文件、逻辑说明、验收标准、完成状态 `[ ]`。**验收标准冻结 WHAT**（可观察结果，禁止把实现类名/新建文件当作验收项）；**涉及文件与逻辑说明是建议 HOW，不冻结**。
 4. **主路径不落盘**：plan 随下一步的合并评论写回 Issue；仅当远程 Issue 不可用时降级填充 `docs/issues/<N>/plan.md`（基于 `templates/plan.md`）。
 5. 将 spec、design、plan 三份内容合并评论写回 Issue：
    `./scripts/git-ops.sh --role planner issue comment <N> "<三份文档合并内容>"`。
@@ -278,22 +279,23 @@ Issue(编号 N)
 
 ### 3.5 [E] 执行阶段（Execute）— 开发
 
-1. **加载角色**：读取 `roles/developer.md`，切换为开发。
+1. **加载角色**：先读 `references/lazy-ladder.md`，再读 `roles/developer.md`，切换为开发。
 2. 切换状态：`./scripts/git-ops.sh --role developer issue status <N> riper-execute`。
 3. 严格逐项执行计划：
    - 主路径（plan 在 Issue 评论中）：每完成一项（或按合理批次）将勾选进度评论同步到 Issue；
    - 降级模式（存在本地 `docs/issues/<N>/plan.md`）：每完成一项将 `[ ]` 改为 `[x]` 并落盘更新；
-   - 遵守 SDD 原则：发现计划有误 → 中断 → 回退 Plan 阶段（PM 修订）→ 再继续；
+   - HOW 按梯子取更高 rung；因复用/标准库/原生/已装依赖/一行而改道时，评论 `步骤 N: skipped: …, used: …, add when: …`；
+   - 遵守 SDD 原则：发现计划有误（含想砍掉本步需求）→ 中断 → 回退 Plan 阶段（PM 修订）→ 再继续；
    - 遭遇无法推进的阻塞 → `./scripts/git-ops.sh --role developer issue status <N> riper-blocked` 并评论说明。
 4. 按仓库既有规范提交代码，提交信息引用 Issue 编号（如 `... (#N)`）。
 5. 交付审查：`./scripts/git-ops.sh --role developer issue status <N> riper-review`。
 
 ### 3.6 [R] 审查阶段（Review）— QA
 
-1. **加载角色**：读取 `roles/reviewer.md`，切换为 QA。
-2. 对照计划（Issue 评论中的 plan，或降级产生的本地 `plan.md`）每一步的验收标准，**以黑盒方式**执行测试与代码审查（读代码属只读，禁止修改业务代码，T0）。
+1. **加载角色**：先读 `references/lazy-ladder.md`，再读 `roles/reviewer.md`，切换为 QA。
+2. 对照计划（Issue 评论中的 plan，或降级产生的本地 `plan.md`）每一步的验收标准，**以黑盒方式**执行测试与代码审查（读代码属只读，禁止修改业务代码，T0）。PASS/FAIL 只认验收标准 + 越界行为（多余功能或未批准新依赖）；多碰文件本身不 FAIL。
 3. 如需编写测试脚本，默认生成到 `test/` 目录（用户显性指定时以用户为准）。
-4. 按 `templates/verify-report.md` 生成 verify-report 全文并评论写回 Issue：逐项判定、证据、失败原因分析；
+4. 按 `templates/verify-report.md` 生成 verify-report 全文并评论写回 Issue：逐项判定、证据、失败原因分析；附加检查含可删清单（`delete:` / `stdlib:` / `native:` / `yagni:` / `shrink:`），**不单独 FAIL、不阻塞判定、不计入重试**。
 5. 仅当远程 Issue 不可用时降级写入 `docs/issues/<N>/verify-report.md`，恢复后在评论中引用。
 
 ### 3.7 状态判定（Loop Control）
