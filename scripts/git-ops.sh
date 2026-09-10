@@ -162,6 +162,41 @@ detect_platform() {
 }
 
 # ---------------------------------------------------------------------------
+# tea 仓库显式指定：tea 0.15.x 无法解析 SSH alias 形式的 remote（如 gitea:owner/repo.git），
+# 会报 "remote repository required"，必须显式传 --repo owner/repo
+# ---------------------------------------------------------------------------
+
+# 从 remote URL 解析 owner/repo；解析失败返回非零
+compute_repo_slug() {
+  local url
+  url="$(git remote -v | awk '/\(fetch\)/{print $2; exit}')"
+  [[ -z "${url}" ]] && url="$(git remote -v | awk 'NR==1{print $2}')"
+  [[ -z "${url}" ]] && return 1
+  url="${url#*://}"   # 去协议（https:// ssh://）
+  url="${url#git@}"   # 去 git@ 用户前缀
+  url="${url/:/\/}"   # 首个冒号归一为斜杠（git@host:path / alias:path / host:port/path 均覆盖；owner/repo 恒为末两段）
+  url="${url%.git}"
+  url="${url%/}"
+  local owner repo
+  repo="${url##*/}"
+  owner="${url%/*}"
+  owner="${owner##*/}"
+  [[ -z "${owner}" || -z "${repo}" ]] && return 1
+  printf '%s/%s' "${owner}" "${repo}"
+}
+
+# tea 包装器：能解析出 slug 时在参数尾部显式追加 --repo（tea 0.15.x 的 --repo
+# 定义在各叶子子命令上，非全局 flag，置于参数尾部对 pflag 混排解析最稳）
+tea_cmd() {
+  local slug
+  if slug="$(compute_repo_slug)"; then
+    tea "$@" --repo "${slug}"
+  else
+    tea "$@"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # CLI 就绪检查：安装 + 授权（未就绪时输出指南并中止）
 # ---------------------------------------------------------------------------
 
@@ -440,13 +475,13 @@ raw_issue_list() {
       log_debug "tea 列表输出不含标签列，已降级：--status / --priority 筛选在本平台不可用。" >&2
       # tea 的 --state 仅支持 open / closed；all 时不传该参数
       if [[ "${state}" == "all" ]]; then
-        tea issues 2>/dev/null \
+        tea_cmd issues 2>/dev/null \
           | sed -n 's/#\([0-9][0-9]*\)[[:space:]][[:space:]]*\(.*\)$/\1	\2/p' \
           | while IFS="$(printf '\t')" read -r n t; do
               printf '%s\t%s\t%s\t\n' "${n}" "${state}" "${t}"
             done
       else
-        tea issues --state "${state}" 2>/dev/null \
+        tea_cmd issues --state "${state}" 2>/dev/null \
           | sed -n 's/#\([0-9][0-9]*\)[[:space:]][[:space:]]*\(.*\)$/\1	\2/p' \
           | while IFS="$(printf '\t')" read -r n t; do
               printf '%s\t%s\t%s\t\n' "${n}" "${state}" "${t}"
@@ -473,7 +508,7 @@ cmd_issue_get() {
       ;;
     tea)
       require_cli tea
-      tea issues "${num}" --comments
+      tea_cmd issues "${num}" --comments
       ;;
   esac
 }
@@ -495,7 +530,8 @@ cmd_issue_comment() {
       ;;
     tea)
       require_cli tea
-      tea issues "${num}" --comment "${content}"
+      # tea 0.15.1：评论实体是 comments 子命令（issues 视图无 --comment flag）
+      tea_cmd comments add "${num}" "${content}"
       ;;
   esac
 }
@@ -537,14 +573,17 @@ raw_label_create() {
       ;;
     tea)
       require_cli tea
-      # 降级声明（C2）：tea 的 labels 子命令不支持颜色与描述，仅能创建同名标签；
-      # 且无 label edit 能力，已存在时直接视为就绪。
-      if tea labels create "${name}" >/dev/null 2>&1; then
-        log_debug "tea 不支持标签颜色/描述，已降级为仅创建 '${name}'。" >&2
+      # tea 0.15.x 支持 --name/--color/--description（--color 必填，缺省会报 invalid color format）；
+      # 无 label edit 能力：create 失败时查列表确认是否已存在，存在视为 updated，否则真失败
+      if tea_cmd labels create --name "${name}" --color "${color}" --description "${desc}" >/dev/null 2>&1; then
         printf 'created'
-      else
+      elif tea_cmd labels list 2>/dev/null \
+            | awk -F'│' '{gsub(/^[[:space:]]+|[[:space:]]+$/,"",$4); print $4}' \
+            | grep -Fxq -- "${name}"; then
         log_debug "tea 标签 '${name}' 已存在（tea 无更新能力，跳过）。" >&2
         printf 'updated'
+      else
+        return 1
       fi
       ;;
   esac
@@ -567,8 +606,15 @@ raw_label_add() {
       ;;
     tea)
       require_cli tea
-      tea labels add "${label}" >/dev/null 2>/dev/null || true # 标签名不存在时先创建（可失败，忽略）
-      tea issues "${num}" --label "${label}" >/dev/null
+      # tea 0.15.1 无 labels add 子命令，打标签走 issues edit --add-labels；
+      # 自由标签可能尚未存在：仅在缺失时创建（Gitea 对非 scoped 名称不查重，
+      # 无条件 create 会翻倍制造同名标签），需带 --color
+      if ! tea_cmd labels list 2>/dev/null \
+            | awk -F'│' '{gsub(/^[[:space:]]+|[[:space:]]+$/,"",$4); print $4}' \
+            | grep -Fxq -- "${label}"; then
+        tea_cmd labels create --name "${label}" --color ededed >/dev/null 2>&1 || true
+      fi
+      tea_cmd issues edit "${num}" --add-labels "${label}" >/dev/null
       ;;
   esac
 }
@@ -601,7 +647,8 @@ raw_label_remove() {
       ;;
     tea)
       require_cli tea
-      tea issues "${num}" --unlabel "${label}" >/dev/null 2>/dev/null \
+      # tea 0.15.1 移除标签走 issues edit --remove-labels（issues 视图无 --unlabel flag）
+      tea_cmd issues edit "${num}" --remove-labels "${label}" >/dev/null 2>/dev/null \
         || log_debug "标签 '${label}' 已不存在或已移除。"
       ;;
   esac
@@ -681,8 +728,8 @@ cmd_issue_create() {
       ;;
     tea)
       require_cli tea
-      tea issue create --title "${title}" --body "${body}" 2>/dev/null \
-        || tea issues create --title "${title}" --body "${body}"
+      # tea 0.15.1：正文 flag 是 --description（--body 不存在；singular `tea issue` 组不存在）
+      tea_cmd issues create --title "${title}" --description "${body}"
       ;;
   esac
 }
@@ -710,7 +757,7 @@ cmd_issue_close() {
       ;;
     tea)
       require_cli tea
-      tea issues close "${num}" 2>/dev/null || tea issue close "${num}"
+      tea_cmd issues close "${num}" 2>/dev/null || tea_cmd issue close "${num}"
       ;;
   esac
 }
@@ -738,7 +785,7 @@ cmd_issue_reopen() {
       ;;
     tea)
       require_cli tea
-      tea issues reopen "${num}" 2>/dev/null || tea issue reopen "${num}"
+      tea_cmd issues reopen "${num}" 2>/dev/null || tea_cmd issue reopen "${num}"
       ;;
   esac
 }
