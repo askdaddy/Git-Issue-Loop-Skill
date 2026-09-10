@@ -28,7 +28,9 @@
     "stagingPrefix": ".iloop.staging-",
     "backupPrefix": ".iloop.backup-",
     "conflictPolicy": "fail-on-foreign-or-dirty-install",
-    "updatePolicy": "stage-validate-backup-switch",
+    "updatePolicy": "stage-validate-follow-staging-backup-switch",
+    "installedTagDetection": "git-describe-exact-match-then-head-sha",
+    "backupRetention": "keep-all-until-user-deletes",
     "postInstall": {
       "frontmatterName": "iloop",
       "executablePaths": [

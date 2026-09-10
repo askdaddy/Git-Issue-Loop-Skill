@@ -26,7 +26,7 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
 
 这里的“最新版”指远端最高的稳定 `vX.Y.Z` Git tag，不跟踪 `main`，也不安装 alpha、beta 或 RC 等预发布版本。成功后，Agent 应报告实际解析的 tag 与 commit SHA。
 
-完整的暂存、校验、备份、更新和回滚协议见 [INSTALL.md](INSTALL.md)；其机器可读版本见 [skill-manifest.json](skill-manifest.json)。同源更新时旧安装备份为 `~/.agents/skills/.iloop.backup-<时间戳>`，避免宿主把备份登记为第二条 `/iloop`。
+完整的暂存、校验、备份、更新和回滚协议见 [INSTALL.md](INSTALL.md)；其机器可读版本见 [skill-manifest.json](skill-manifest.json)。同源更新时旧安装备份为 `~/.agents/skills/.iloop.backup-<时间戳>`，避免宿主把备份登记为第二条 `/iloop`。同源更新时先 clone staging，再按 staging 内契约做备份与切换。
 
 > 必须先发布至少一个稳定 `vX.Y.Z` tag，“安装最新版”才可用。若找不到稳定 tag，合规的 Agent 必须 fail closed，不能退化安装 `main`。
 
@@ -71,6 +71,6 @@ references/              CLI 配置说明
 
 ## 稳定版发布约定
 
-`main` 是开发分支。每个稳定版都必须创建新的、不可复用的 `vX.Y.Z` tag，并应发布对应的 GitHub Release 记录变更说明。预发布版本必须使用类似 `-beta.1` 的 SemVer 后缀，默认安装器会自动跳过。
+`main` 是开发分支。每个稳定版都必须创建新的、不可复用的 `vX.Y.Z` tag，并应发布对应的 GitHub Release 记录变更说明。预发布版本必须使用类似 `-beta.1` 的 SemVer 后缀，默认安装器会自动跳过。改动安装协议（`INSTALL.md` 或 `skill-manifest.json` 的 `installation`）必须随新的稳定 `vX.Y.Z` tag 发布。
 
 规范性工作流规则见 [SKILL.md](SKILL.md)。英文版项目介绍见 [README.md](README.md)。

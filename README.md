@@ -42,7 +42,9 @@ The full staging, validation, backup, update, and rollback protocol is in
 [INSTALL.md](INSTALL.md). Its machine-readable counterpart is
 [skill-manifest.json](skill-manifest.json). Same-origin updates rename the
 previous install to `~/.agents/skills/.iloop.backup-<timestamp>` so Agent hosts
-do not register the backup as a second `/iloop`.
+do not register the backup as a second `/iloop`. Same-origin updates clone
+staging first, then follow that staging `INSTALL.md` / `skill-manifest.json`
+for backup and switch.
 
 > A stable `vX.Y.Z` tag must be published before latest-release installation is
 > available. A compliant Agent fails closed when no stable tag exists; it must
@@ -99,7 +101,8 @@ references/              CLI setup guidance
 `main` is the development branch. Each stable release must use a new immutable
 `vX.Y.Z` tag and should have a matching GitHub Release containing its change
 notes. Pre-release tags use a SemVer suffix such as `-beta.1` and are skipped by
-the default installer.
+the default installer. Changes to the install protocol (`INSTALL.md` or
+`skill-manifest.json` `installation`) must ship in a new stable `vX.Y.Z` tag.
 
 For the normative workflow rules, see [SKILL.md](SKILL.md). For the Chinese
 version of this introduction, see [README_CN.md](README_CN.md).
