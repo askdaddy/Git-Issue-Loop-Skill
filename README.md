@@ -19,6 +19,8 @@ CLIs: `gh`, `glab`, and `tea`.
   or environment diagnostics.
 - Stage-aware dispatch: a numbered issue loads the matching frame-0 role from
   its RIPER status (and artifacts), instead of always starting at Research.
+- On start, compare the installed Skill against the highest stable git tag and
+  ask before upgrading; never switch installs unattended.
 - Goal bootstrap: hand `/iloop` a plain goal instead of an issue number, and
   the Planner drafts it, confirms with you, files the issue, and enters the
   loop via dispatch (a newly created issue lands in Research).

@@ -8,7 +8,8 @@ description: >-
   （目标登记会把一句目标自动转化为 Issue 再进循环），
   支持 GitHub / GitLab / Gitea / Forgejo（gh / glab / tea），并在阶段切换时自动加载
   Agent Persona（PM=planner / developer / QA=reviewer）。启动时按 Issue 的 RIPER
-  状态分发角色，0 帧切入当前阶段，而不是总从研究起手。
+  状态分发角色，0 帧切入当前阶段，而不是总从研究起手。每会话对照官方仓库最高
+  稳定 tag 检查 Skill 是否有更新，有则询问用户是否升级，不得自行切换。
 ---
 
 # iloop（git-issue-loop）：Issue 驱动的 RIPER 研发闭环
@@ -63,7 +64,7 @@ description: >-
 
 ## 1. 多角色驱动机制（Persona Loading）
 
-**先完成 §3.0.1 启动分发，再按分发结果读取对应的一份角色文件。** 禁止为了「看看该不该调研」而预加载 PM。doctor 与 `labels init` 不需要角色。
+**先完成 §3.0.1 启动分发，再按分发结果读取对应的一份角色文件。** 禁止为了「看看该不该调研」而预加载 PM。Skill 更新检查、doctor 与 `labels init` 不需要角色。
 
 **进入分发指定的 RIPER 阶段之前，必须先完成该阶段的角色切换：**
 
@@ -134,11 +135,18 @@ description: >-
 
 ### 3.0 前置自检（每轮循环开始前）
 
-1. 执行 `./scripts/git-ops.sh doctor`：依次确认运行环境（macOS / Windows Git Bash）、remote 路由到的 CLI、CLI 已安装、CLI 已授权。
-2. doctor 通过后，若本次会话尚未执行过，运行 `./scripts/git-ops.sh labels init`（幂等）：确保优先级 / 状态 / 重试三族标签在平台上存在，避免后续 `issue priority` / `issue status` 因标签缺失而中止。
-3. **全部通过** → 进入 §3.0.1 启动分发。**禁止在分发完成之前读取任何 `roles/*.md`。**
-4. **CLI 缺失或未授权** → 立即中止，把脚本输出的安装/授权指南（或 `references/cli-setup.md` 对应章节）原样交给用户，说明需要完成的具体动作；用户确认完成后重跑 `doctor`，通过再从中断阶段继续。
-5. 严禁绕行：不得改用 curl + REST API、不得猜测/代填 token、不得跳过 Issue 侧的读写步骤。
+1. **Skill 更新检查（先于 doctor；本会话尚未执行过时）**：以**当前加载的 `SKILL.md` 所在目录**为 Skill 根（默认 `~/.agents/skills/iloop`，不是目标项目仓库根），执行：
+   `bash <Skill根>/scripts/check-update.sh`
+   无角色。比较本地 `git describe --tags --exact-match`（失败则为 untagged + HEAD SHA）与清单 `distribution.repository` 上最高稳定 tag（`vX.Y.Z`，忽略预发布）。**禁止**用目标项目 `git remote`，**禁止**把 `skill-manifest.json` 的 `skill.version` 当作已安装版本。
+   - `status=current`（exit 0）→ 继续 doctor。
+   - `status=update-available`（exit 2）→ 向用户展示 `local_ref` 与 `latest_tag`，询问**升级**或**本次跳过**。Agent **不得自行升级**。升级则只执行 `INSTALL.md` 的一句话协议，完成后提醒刷新宿主会话；本轮默认停止（协议已变），用户明确要求继续才用**新** Skill 重入 §3.0。跳过则继续 doctor。
+   - `status=untagged`（exit 2）→ 说明当前为非稳定安装并列出 `latest_tag`；默认继续本轮，用户也可选择改去安装稳定版。
+   - 检查失败（exit 1，含网络 / 非 git / 无稳定 tag）→ 在对话中声明后**不阻塞**，继续 doctor。
+2. 执行 `./scripts/git-ops.sh doctor`（在**目标项目**仓库根）：依次确认运行环境（macOS / Windows Git Bash）、remote 路由到的 CLI、CLI 已安装、CLI 已授权。
+3. doctor 通过后，若本次会话尚未执行过，运行 `./scripts/git-ops.sh labels init`（幂等）：确保优先级 / 状态 / 重试三族标签在平台上存在，避免后续 `issue priority` / `issue status` 因标签缺失而中止。
+4. **全部通过** → 进入 §3.0.1 启动分发。**禁止在分发完成之前读取任何 `roles/*.md`。**
+5. **CLI 缺失或未授权** → 立即中止，把脚本输出的安装/授权指南（或 `references/cli-setup.md` 对应章节）原样交给用户，说明需要完成的具体动作；用户确认完成后重跑 `doctor`，通过再从中断阶段继续。
+6. 严禁绕行：不得改用 curl + REST API、不得猜测/代填 token、不得跳过 Issue 侧的读写步骤。
 
 ### 3.0.1 启动分发（Dispatch，无角色）
 
@@ -322,6 +330,7 @@ Issue(编号 N)
 "验收 git issues"             → 口头覆盖：对目标 issue 执行 [R] 审查（须说明对状态的影响）
 "排 plan，不要执行"           → 口头覆盖：只走到计划写回（入口已超过计划则报告并停止）
 "检查环境 / cli 没装"          → 执行 doctor，输出安装与授权指南
+"检查 skill 更新"              → 在 Skill 根运行 scripts/check-update.sh；有更高稳定 tag 则询问是否按 INSTALL.md 升级
 ```
 
 ## 5. 安装与注册（让 `/iloop` 生效）

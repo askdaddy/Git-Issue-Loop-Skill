@@ -32,6 +32,14 @@ Agent 收到上述请求后，必须按此协议执行；不得将“最新版�
 
 回滚时，Agent 必须列出 `~/.agents/skills/.iloop.backup-*`；若仍存在可见的 `iloop.backup-*`，也一并列出，供用户选择。备份默认全部保留（含 `.iloop.backup-*` 与残留 `iloop.backup-*`）。未经用户明确指定，不能删除备份，也不能自动回滚。
 
+## 启动时的版本检查
+
+`/iloop` 在目标项目 `doctor` **之前**、每会话一次，于**当前加载的 `SKILL.md` 所在目录**（默认 `~/.agents/skills/iloop`）运行 `scripts/check-update.sh`。比较本地 `git describe --tags --exact-match`（失败则用 HEAD SHA）与 `skill-manifest.json` 里 `distribution.repository` 的最高稳定 `vX.Y.Z` tag。
+
+- 有更高稳定版：向用户展示本地 tag 与远端 latest，询问是否按上文一句话升级。**Agent 不得自行切换安装。**
+- 检查失败（网络、非 git、无稳定 tag）不阻止后续 doctor 与闭环。
+- 禁止用目标项目的 `git remote` 作为检查源；禁止把 `skill.version` 当作已安装 tag。
+
 ## 发行者约定
 
 - `main` 是开发分支，不能作为默认安装源。

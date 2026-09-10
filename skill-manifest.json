@@ -15,7 +15,8 @@
       "templates/plan.md",
       "templates/verify-report.md",
       "references/cli-setup.md",
-      "references/lazy-ladder.md"
+      "references/lazy-ladder.md",
+      "scripts/check-update.sh"
     ]
   },
   "distribution": {
