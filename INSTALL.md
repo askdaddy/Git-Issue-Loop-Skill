@@ -17,7 +17,7 @@ Agent 收到上述请求后，必须按此协议执行；不得将“最新版�
 3. 将该 tag 克隆到 `~/.agents/skills/.iloop.staging-<随机值>`，以 detached HEAD 检出；记录 `git rev-parse HEAD` 的 commit SHA。
 4. 读取 `skill-manifest.json`，确认仓库 URL、`SKILL.md`、`scripts/git-ops.sh`、角色文件、模板和 CLI 指南均存在；确认 `SKILL.md` 的 frontmatter `name` 是 `iloop`，且 `scripts/git-ops.sh` 可执行。
 5. 若 `~/.agents/skills/iloop` 不存在，切换 staging 目录为目标目录。若已存在，先检查其 `remote.origin.url` 是否等于清单中的仓库 URL、工作区是否干净：
-   - 同源且干净：将旧目录重命名为 `iloop.backup-<时间戳>`，再切换 staging 目录。
+   - 同源且干净：将旧目录重命名为 `.iloop.backup-<时间戳>`，再切换 staging 目录。
    - 非同源或有本地修改：停止，不覆盖、不删除，并报告原因和目录路径。
 6. 最后报告：目标目录、解析到的 tag、commit SHA，以及验证结果。仅当目标项目实际运行 `/iloop` 时，才在那个项目仓库根目录执行 `./scripts/git-ops.sh doctor`。
 
@@ -27,7 +27,9 @@ Agent 收到上述请求后，必须按此协议执行；不得将“最新版�
 
 更新使用相同的一句话请求。Agent 重新解析最新稳定 tag，只有在它与已安装 tag 不同时才执行 staging → 验证 → 备份 → 切换。
 
-回滚时，Agent 应列出 `iloop.backup-*` 目录供用户选择；未经用户明确指定，不能删除备份，也不能自动回滚。
+在备份 → 切换完成前（以及每次合规更新时），若 `~/.agents/skills/` 下存在一级目录匹配 `iloop.backup-*`（无点前缀），必须逐个 `mv` 为同名的 `.iloop.backup-*`。仅改名；不删除；不修改备份内部文件。若目标路径 `.iloop.backup-*` 已存在，停止并报告该路径，不覆盖、不删除。
+
+回滚时，Agent 必须列出 `~/.agents/skills/.iloop.backup-*`；若仍存在可见的 `iloop.backup-*`，也一并列出，供用户选择。未经用户明确指定，不能删除备份，也不能自动回滚。
 
 ## 发行者约定
 

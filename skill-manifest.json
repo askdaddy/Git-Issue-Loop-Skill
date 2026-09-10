@@ -26,7 +26,7 @@
   "installation": {
     "defaultTarget": "~/.agents/skills/iloop",
     "stagingPrefix": ".iloop.staging-",
-    "backupPrefix": "iloop.backup-",
+    "backupPrefix": ".iloop.backup-",
     "conflictPolicy": "fail-on-foreign-or-dirty-install",
     "updatePolicy": "stage-validate-backup-switch",
     "postInstall": {

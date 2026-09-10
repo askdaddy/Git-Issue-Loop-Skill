@@ -40,7 +40,9 @@ report the resolved tag and commit SHA after a successful installation.
 
 The full staging, validation, backup, update, and rollback protocol is in
 [INSTALL.md](INSTALL.md). Its machine-readable counterpart is
-[skill-manifest.json](skill-manifest.json).
+[skill-manifest.json](skill-manifest.json). Same-origin updates rename the
+previous install to `~/.agents/skills/.iloop.backup-<timestamp>` so Agent hosts
+do not register the backup as a second `/iloop`.
 
 > A stable `vX.Y.Z` tag must be published before latest-release installation is
 > available. A compliant Agent fails closed when no stable tag exists; it must
