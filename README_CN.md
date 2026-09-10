@@ -12,7 +12,8 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
 ## 提供的能力
 
 - `/iloop` 入口，可执行完整 RIPER 闭环、仅计划、验收或环境自检。
-- 目标直入：给 `/iloop` 一句目标而非 Issue 编号，Planner 会整理草稿、经确认后创建 Issue 并设优先级，再从研究阶段进入闭环。
+- 启动分发：编号入口先按 RIPER 状态（并对产物）分发角色，0 帧切入当前阶段，不总是从研究起手。
+- 目标直入：给 `/iloop` 一句目标而非 Issue 编号，Planner 会整理草稿、经确认后创建 Issue 并设优先级，再经分发进入闭环（新建 Issue 会落入研究）。
 - 严格角色分工：Planner 负责规范和计划，Developer 按已批准计划实施，Reviewer 进行黑盒验收。
 - 规格驱动交付：计划是冻结契约；任何计划变更都必须显式退回计划阶段。
 - 优先级（`p0`–`p3`）和 RIPER 状态均使用互斥的 Issue 标签族表达。

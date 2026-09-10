@@ -7,7 +7,8 @@ description: >-
   Issue 驱动开发、研发闭环时触发。自动完成 目标登记→研究→创新→计划→执行→审查 循环
   （目标登记会把一句目标自动转化为 Issue 再进循环），
   支持 GitHub / GitLab / Gitea / Forgejo（gh / glab / tea），并在阶段切换时自动加载
-  Agent Persona（PM=planner / developer / QA=reviewer）。
+  Agent Persona（PM=planner / developer / QA=reviewer）。启动时按 Issue 的 RIPER
+  状态分发角色，0 帧切入当前阶段，而不是总从研究起手。
 ---
 
 # iloop（git-issue-loop）：Issue 驱动的 RIPER 研发闭环
@@ -31,7 +32,7 @@ description: >-
 问清后进入 §3.0 前置自检与 RIPER 循环。
 容错：若用户在 `/iloop` 后直接带了编号或阶段意图（如 `/iloop 42`、"只排 plan"），直接采用，不再追问该项。
 
-**目标直入（Goal Bootstrap）**：当 `/iloop` 参数（或自然语言意图）是一句**目标描述**而非 Issue 编号时，进入 §3.1 [G] 目标登记阶段：PM 将目标结构化为 Issue 草稿、经用户确认后创建并设置优先级，再从 [R] 研究阶段进入常规闭环。触发示例："我要实现 X"、"从零做一个 X"、"新目标：X"。
+**目标直入（Goal Bootstrap）**：当 `/iloop` 参数（或自然语言意图）是一句**目标描述**而非 Issue 编号时，进入 §3.1 [G] 目标登记阶段：PM 将目标结构化为 Issue 草稿、经用户确认后创建并设置优先级，再经 §3.0.1 分发进入闭环（新建 Issue 状态为 `riper-research`，故落入 [R]）。触发示例："我要实现 X"、"从零做一个 X"、"新目标：X"。
 
 ## T0 铁律（最高优先级，与任何规则冲突时以此为准）
 
@@ -62,7 +63,9 @@ description: >-
 
 ## 1. 多角色驱动机制（Persona Loading）
 
-**进入任何 RIPER 阶段之前，必须先完成角色切换：**
+**先完成 §3.0.1 启动分发，再按分发结果读取对应的一份角色文件。** 禁止为了「看看该不该调研」而预加载 PM。doctor 与 `labels init` 不需要角色。
+
+**进入分发指定的 RIPER 阶段之前，必须先完成该阶段的角色切换：**
 
 | 阶段 | 角色文件 | 角色 | 可写区域 |
 |------|----------|------|----------|
@@ -132,35 +135,97 @@ description: >-
 
 1. 执行 `./scripts/git-ops.sh doctor`：依次确认运行环境（macOS / Windows Git Bash）、remote 路由到的 CLI、CLI 已安装、CLI 已授权。
 2. doctor 通过后，若本次会话尚未执行过，运行 `./scripts/git-ops.sh labels init`（幂等）：确保优先级 / 状态 / 重试三族标签在平台上存在，避免后续 `issue priority` / `issue status` 因标签缺失而中止。
-3. **全部通过** → 用户给的是目标描述时进入 §3.1 [G] 目标登记阶段，否则直接进入 [R] 研究阶段。
+3. **全部通过** → 进入 §3.0.1 启动分发。**禁止在分发完成之前读取任何 `roles/*.md`。**
 4. **CLI 缺失或未授权** → 立即中止，把脚本输出的安装/授权指南（或 `references/cli-setup.md` 对应章节）原样交给用户，说明需要完成的具体动作；用户确认完成后重跑 `doctor`，通过再从中断阶段继续。
 5. 严禁绕行：不得改用 curl + REST API、不得猜测/代填 token、不得跳过 Issue 侧的读写步骤。
+
+### 3.0.1 启动分发（Dispatch，无角色）
+
+doctor / `labels init` 通过后、加载任何角色之前执行。本层是协议查表，不是第四个 Persona：不读业务代码、不写 spec、不为了「看看该不该调研」而预加载 PM。
+
+**状态先后（用于「更早」比较）**：
+
+`(无 riper-* ) < riper-research < riper-innovation < riper-plan < riper-execute < riper-review < riper-verified`
+
+`riper-blocked` 不参与前进：分发到此后停止并报告卡点，等待人工介入。
+
+#### 第 0 层：调用分类（只看用户这句话）
+
+| 输入 | 去向 |
+|------|------|
+| 一句新目标（无 Issue 编号） | §3.1 `[G]`，然后加载 PM |
+| 编号 /「落地 #N」 | 对该 N 进入第 1 层 |
+| 「推进迭代」 | 列出 open Issue（p0→p3），对**每个**进入第 1 层 |
+| 「只验收 / 只排 plan / 重做研究」等口头覆盖 | 记录覆盖项，再进入第 1 层（覆盖优先于标签，须先说明对状态的影响） |
+| 仅环境自检 / doctor | 停在自检，不加载角色 |
+
+无参数进入时，仍先问清目标 Issue / 执行范围 / 落盘确认（用户已给的不重复问），问清后再走本表。
+
+**执行范围是上限，分发结果是入口（C9）**：完整闭环可走到 `riper-verified`；只到计划则入口已是 `[E]`/`[R]审查` 时报告并停止，不擅自回退阶段；只做验收若非用户覆盖，不得把仍在执行中的 Issue 强行改成审查。
+
+#### 第 1 层：阶段分发（Issue 证据）
+
+对编号 N 执行 `./scripts/git-ops.sh issue get <N>`（此时仍无角色；`get` 不限角色）。从标签读取唯一 `riper-*`、`p0`–`p3`、`riper-retry-*`。用下列标记扫描评论与降级文件 `docs/issues/<N>/`（命中任一即视为产物存在）：
+
+| 产物 | 评论或文件标记 |
+|------|----------------|
+| spec | `# Spec` 或 `阶段: [R] Research` |
+| design | `# Design` 或 `阶段: [I] Innovation` |
+| plan | `# Plan` 或 `阶段: [P] Plan` |
+| verify-report | `Verify Report` / `verify-report`，或同时含 `阶段: [R] Review` 与逐项 PASS/FAIL |
+
+自定义评论标题须保留上表标记，否则产物检测会漏。
+
+**证据阶段**：无 spec → 早于研究；有 spec 无 design → 研究完成；有 design 无 plan → 创新完成；有冻结 plan → 计划完成；有 verify-report 或 retry>0 且状态为 `riper-plan` → FAIL 回退修计划（不要当第一版 plan 来写）。
+
+**切入点 = min(标签声称阶段, 证据阶段)**。标签超前于产物时，以产物为准往回退（例如标了 `riper-execute` 但没有 plan → `[P]`）。
+
+| 切入点（回退后） | 0 帧角色 | 进入 |
+|------------------|----------|------|
+| 无 `riper-*` 且无 plan / `riper-research` | PM | §3.2 `[R]`；已有 spec 则补缺口，不从零重开调研 |
+| `riper-innovation` | PM | §3.3 `[I]` |
+| `riper-plan`（含 FAIL 修计划） | PM | §3.4 `[P]` |
+| `riper-execute`，或无 `riper-*` 但已有冻结 plan | 开发 | §3.5 `[E]`，从计划未勾选项继续 |
+| `riper-review` | QA | §3.6 `[R] 审查` |
+| `riper-verified` | 无 | 报告已闭环，不加载角色、不改状态；除非用户明示重开并重做 |
+| `riper-blocked` | 无 | 报告卡点，停止 |
+
+GitHub/GitLab 的 Open **不等于**可写代码。无 `riper-*` 且无冻结 plan → `[R]`，禁止直接交给开发。
+
+**glab/tea 降级**：`issue get` 看不到标签时，在对话中声明降级，改用产物标记；产物也没有则当无状态，切入 `[R]`。不要为此改用 REST API，也不要为此去实现 `issue get --json`。
+
+**状态写入（C6）**：进入某 §3.x 时，`issue status` 对齐该阶段仅当：当前无状态、当前等于本阶段、当前早于本阶段，或本次切入来自产物回退（证据早于标签，允许把超前标签拉回证据阶段），或用户显性「重做某阶段」，或 QA FAIL 退回 `riper-plan`。禁止在分发结果不是 `[R]` 时把 `riper-execute` / `riper-review` / `riper-verified` 改回 `riper-research`。
+
+分发结束后**才**读取对应的一份 `roles/*.md`，从该节现有步骤继续，不重跑被跳过的阶段。
 
 ### 状态流转图
 
 ```
 目标描述（一句，可选入口）
-   │ PM: [G] 目标登记 — 草稿 → 用户确认 → issue create → 设优先级
+   │ 第 0 层：新目标 → PM [G] 草稿 → 确认 → create → 优先级 → riper-research
    ▼
 Issue(编号 N)
-   │ PM: 设优先级 p0~p3（[G] 已设则校验沿用，不重复设置）
+   │ 启动分发（§3.0.1）：读标签 + 产物，取较早者；口头覆盖优先
    ▼
-[R] 研究 ──► [I] 创新 ──► [P] 计划 ──► [E] 执行 ──► [R] 审查
- riper-       riper-        riper-       riper-        riper-
- research     innovation    plan         execute       review
-                 ▲                        │              │
-                 │        计划有误        │   FAIL(QA 退回 riper-plan)
-                 └────────────────────────┴──────┬───────┘
-                                                  │ 重试 ≤ 3 次
-                                         全部 PASS │
-                                                  ▼
-                              riper-verified → QA 关闭 Issue
-                              （超限：riper-blocked，人工介入）
+  ┌─────────┬─────────┬─────────┬─────────┬──────────┐
+  ▼         ▼         ▼         ▼         ▼          ▼
+ [R]研究  [I]创新   [P]计划   [E]执行  [R]审查   verified/blocked
+  PM        PM        PM       开发      QA      报告后停止
+ riper-    riper-    riper-    riper-   riper-
+ research  innovation plan     execute  review
+              ▲                  │         │
+              │   计划有误       │  FAIL（QA 退回 riper-plan）
+              └──────────────────┴────┬────┘
+                                      │ 重试 ≤ 3 次
+                             全部 PASS │
+                                      ▼
+                   riper-verified → QA 关闭 Issue
+                   （超限：riper-blocked，人工介入）
 ```
 
 ### 3.1 [G] 目标登记阶段（Goal Bootstrap）— PM
 
-仅当用户给的是**目标描述**而非 Issue 编号时进入（编号输入直接从 §3.2 [R] 研究阶段开始）。
+仅当用户给的是**目标描述**而非 Issue 编号时进入（编号输入走 §3.0.1 第 1 层分发，不默认研究）。
 
 1. **加载角色**：读取 `roles/planner.md`，切换为 PM。
 2. **只读调研**：围绕目标快速拉取相关代码上下文（涉及模块、现状、约束），全程只读（T0）。
@@ -176,17 +241,20 @@ Issue(编号 N)
    - `./scripts/git-ops.sh --role planner issue status <N> riper-research`；
    - `./scripts/git-ops.sh --role planner issue comment <N> "由目标直入 [G] 创建，原始目标：<用户原话>"`。
 7. **大目标拆分**：判定目标过大时，拆分为多个 Issue（逐个执行第 6 步），在主 Issue 评论中登记拆分关系，随后按 p0→p3 顺序逐个进入循环（同"推进迭代"语义）。
-8. 完成后进入 §3.2 [R] 研究阶段（编号 N）。
+8. 完成后进入 §3.0.1 启动分发（编号 N 此时为 `riper-research`，第 1 层将落入 §3.2 [R]）。
 
 ### 3.2 [R] 研究阶段（Research）— PM
+
+仅当 §3.0.1 分发结果为 `[R]` 时进入本节。禁止在分发结果不是研究时执行本节（含禁止「先切 `riper-research` 再调研」）。
 
 1. **加载角色**：读取 `roles/planner.md`，切换为 PM。
 2. `./scripts/git-ops.sh --role planner issue get <N>` 获取 Issue 详情（标题、正文、评论、标签）。
 3. **校验并设置优先级**（艾森豪威尔矩阵；[G] 目标登记已设置过则校验沿用，不重复设置）：`./scripts/git-ops.sh --role planner issue priority <N> <p0|p1|p2|p3>`。
-4. 切换状态：`./scripts/git-ops.sh --role planner issue status <N> riper-research`。
+4. **对齐状态**：分发已判定入口为研究，执行 `./scripts/git-ops.sh --role planner issue status <N> riper-research`。若标签曾超前于产物，这是把状态拉回证据阶段（C6 允许的产物回退），不是把合法的执行/审查 Issue 打回研究。
 5. 阅读正文与全部评论，**只读**拉取相关代码上下文（涉及文件、模块、依赖）。
 6. 按 `templates/spec.md` 提炼规范：原始需求、上下文代码、核心约束、澄清假设。
-   - **主路径**：spec 全文以评论写入 Issue → `./scripts/git-ops.sh --role planner issue comment <N> "<spec 全文>"`，不落盘本地；
+   - **已有 spec**（评论或降级文件命中 §3.0.1 产物标记）：只补缺口或澄清，**禁止从零重开调研**；spec 已完整则进入 §3.0.1 让下一阶段接手（通常为 `[I]`）。
+   - **尚无 spec**：全文以评论写入 Issue → `./scripts/git-ops.sh --role planner issue comment <N> "<spec 全文>"`，不落盘本地；
    - **降级 fallback**（CLI 缺失 / 未授权 / 平台不支持 / API 失败 / 内容超限时）：写入 `docs/issues/<N>/spec.md`，并在 Issue 恢复后评论引用该文件路径。
 7. 若需求存在无法用假设消解的歧义，在 Issue 下评论提问并暂停循环，等待用户回复。
 
@@ -244,13 +312,13 @@ Issue(编号 N)
 ## 4. 快速用法
 
 ```
-/iloop                        → 无参数进入：先问目标 Issue / 执行范围 / 落盘确认，再跑 doctor 自检
-/iloop 我要实现 XXX            → 目标直入：[G] 登记（草稿经确认后建 Issue 并设优先级）→ 完整闭环
-"从零做一个 X" / "新目标：X"    → 同上：从目标创建 Issue 后进入 [R] 研究
-"落地 issue #42"              → 先跑 doctor 自检，再从 [R] 研究阶段开始完整循环（先定优先级）
-"推进迭代"                    → 扫描 open issue，按优先级 p0→p3 排序逐个进入循环
-"验收 git issues"             → 对状态为 riper-review 的 issue 执行 [R] 审查阶段
-"排 plan，不要执行"           → 只走 [R]→[I]→[P]，到计划写回为止
+/iloop                        → 无参数进入：先问目标 Issue / 执行范围 / 落盘确认，再跑 doctor 自检，然后 §3.0.1 分发
+/iloop 我要实现 XXX            → 目标直入：[G] 登记（草稿经确认后建 Issue 并设优先级）→ 分发后落入 [R] 再闭环
+"从零做一个 X" / "新目标：X"    → 同上：从目标创建 Issue 后经分发进入循环
+"落地 issue #42"              → doctor 后经 §3.0.1 按 #42 当前状态 0 帧切入对应角色与阶段
+"推进迭代"                    → 扫描 open issue，按优先级 p0→p3 排序，对每个走第 1 层分发
+"验收 git issues"             → 口头覆盖：对目标 issue 执行 [R] 审查（须说明对状态的影响）
+"排 plan，不要执行"           → 口头覆盖：只走到计划写回（入口已超过计划则报告并停止）
 "检查环境 / cli 没装"          → 执行 doctor，输出安装与授权指南
 ```
 

@@ -17,9 +17,11 @@ CLIs: `gh`, `glab`, and `tea`.
 
 - A `/iloop` entry point for a complete RIPER loop, planning-only work, review,
   or environment diagnostics.
+- Stage-aware dispatch: a numbered issue loads the matching frame-0 role from
+  its RIPER status (and artifacts), instead of always starting at Research.
 - Goal bootstrap: hand `/iloop` a plain goal instead of an issue number, and
   the Planner drafts it, confirms with you, files the issue, and enters the
-  loop from Research.
+  loop via dispatch (a newly created issue lands in Research).
 - Strict role separation: Planner owns specification and planning, Developer
   implements the approved plan, and Reviewer performs black-box acceptance.
 - Spec-driven delivery: the plan is a frozen contract and changes to it require
