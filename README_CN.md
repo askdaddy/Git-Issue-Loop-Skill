@@ -28,7 +28,7 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
 
 这里的“最新版”指远端最高的稳定 `vX.Y.Z` Git tag，不跟踪 `main`，也不安装 alpha、beta 或 RC 等预发布版本。成功后，Agent 应报告实际解析的 tag 与 commit SHA。
 
-完整的暂存、校验、备份、更新和回滚协议见 [INSTALL.md](INSTALL.md)；其机器可读版本见 [skill-manifest.json](skill-manifest.json)。同源更新时旧安装备份为 `~/.agents/skills/.iloop.backup-<时间戳>`，避免宿主把备份登记为第二条 `/iloop`。同源更新时先 clone staging，再按 staging 内契约做备份与切换。
+完整的暂存、校验、备份、更新和回滚协议见 [INSTALL.md](INSTALL.md)；其机器可读版本见 [skill-manifest.json](skill-manifest.json)。同源更新时旧安装备份为 `~/.agents/backups/iloop.backup-<时间戳>`（不在 `skills/` 下；隐藏前缀不足以避免部分宿主把点目录登记为第二条 `/iloop`）。暂存克隆到 `${TMPDIR:-/tmp}/iloop.staging-<随机值>`。同源更新时先 clone staging，再按 staging 内契约做备份与切换。
 
 > 必须先发布至少一个稳定 `vX.Y.Z` tag，“安装最新版”才可用。若找不到稳定 tag，合规的 Agent 必须 fail closed，不能退化安装 `main`。
 

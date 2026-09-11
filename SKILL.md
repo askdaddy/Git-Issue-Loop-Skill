@@ -335,7 +335,7 @@ Issue(编号 N)
 
 ## 5. 安装与注册（让 `/iloop` 生效）
 
-本 Skill 以 GitHub 仓库分发。默认安装位置为 `~/.agents/skills/iloop`，目录名必须与 frontmatter 的 `name`（`iloop`）一致。面向 Agent 的安装入口、版本解析和安全切换协议见仓库根目录的 `INSTALL.md`；机器可读约束见 `skill-manifest.json`。同源更新时旧安装备份为 `~/.agents/skills/.iloop.backup-<时间戳>`（隐藏前缀，避免宿主把备份登记为第二条 `/iloop`）。同源更新时先 clone staging，再按 staging 内 `INSTALL.md` / `skill-manifest.json` 做备份与切换。
+本 Skill 以 GitHub 仓库分发。默认安装位置为 `~/.agents/skills/iloop`，目录名必须与 frontmatter 的 `name`（`iloop`）一致。面向 Agent 的安装入口、版本解析和安全切换协议见仓库根目录的 `INSTALL.md`；机器可读约束见 `skill-manifest.json`。同源更新时旧安装备份为 `~/.agents/backups/iloop.backup-<时间戳>`（**不在** `skills/` 下：部分宿主会把点目录也当成技能扫描，隐藏前缀不足以避免第二条 `/iloop`）。暂存克隆到 `${TMPDIR:-/tmp}/iloop.staging-<随机值>`。同源更新时先 clone staging，再按 staging 内 `INSTALL.md` / `skill-manifest.json` 做备份与切换。
 
 **用户只需说一句话**：
 

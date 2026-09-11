@@ -45,8 +45,10 @@ report the resolved tag and commit SHA after a successful installation.
 The full staging, validation, backup, update, and rollback protocol is in
 [INSTALL.md](INSTALL.md). Its machine-readable counterpart is
 [skill-manifest.json](skill-manifest.json). Same-origin updates rename the
-previous install to `~/.agents/skills/.iloop.backup-<timestamp>` so Agent hosts
-do not register the backup as a second `/iloop`. Same-origin updates clone
+previous install to `~/.agents/backups/iloop.backup-<timestamp>` (outside
+`skills/`; a hidden prefix under `skills/` is not enough, because some Agent
+hosts still scan dot directories and register a second `/iloop`). Staging
+clones to `${TMPDIR:-/tmp}/iloop.staging-<id>`. Same-origin updates clone
 staging first, then follow that staging `INSTALL.md` / `skill-manifest.json`
 for backup and switch.
 

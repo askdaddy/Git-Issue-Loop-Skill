@@ -27,8 +27,10 @@
   },
   "installation": {
     "defaultTarget": "~/.agents/skills/iloop",
-    "stagingPrefix": ".iloop.staging-",
-    "backupPrefix": ".iloop.backup-",
+    "stagingDir": "${TMPDIR:-/tmp}",
+    "stagingPrefix": "iloop.staging-",
+    "backupDir": "~/.agents/backups",
+    "backupPrefix": "iloop.backup-",
     "conflictPolicy": "fail-on-foreign-or-dirty-install",
     "updatePolicy": "stage-validate-follow-staging-backup-switch",
     "installedTagDetection": "git-describe-exact-match-then-head-sha",
