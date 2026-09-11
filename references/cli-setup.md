@@ -20,6 +20,16 @@
 ./scripts/git-ops.sh platform    # 输出 gh / glab / tea
 ```
 
+### 平台识别与自建实例路由
+
+`git-ops.sh` 按 `git remote` 主机名**分层识别**平台，再路由到对应 CLI：
+
+1. **主机名启发式（快路径）**：`github.com` 或含 `github`（GitHub Enterprise）→ `gh`；`gitlab.com` 或含 `gitlab` → `glab`；含 `gitea` / `forgejo` 或 `codeberg.org` → `tea`。
+2. **授权注册表**（主机名无关键字时，自建实例常见）：查询各**已安装** CLI 是否已授权该 host —— `gh` / `glab` 用 `auth status --hostname <host>`、`tea` 用 `login list`，命中哪个就路由到哪个。
+3. **无法判定则显式失败**：脚本 `exit 1` 并打印该 host 的授权指引，**绝不默认路由到 `gh`**。
+
+> **自建实例必须先授权对应 CLI**：自建 GitLab 用 `glab auth login --hostname <host>`、自建 Gitea/Forgejo 用 `tea login add`（实例 URL 填 `https://<host>`）、GitHub Enterprise 用 `gh auth login --hostname <host>`。授权后脚本才能据注册表识别归属。**用 `gh` 访问自建 GitLab/Gitea 一定失败**——它们不是同一套 API。
+
 ## 1. GitHub → `gh`
 
 ### 安装

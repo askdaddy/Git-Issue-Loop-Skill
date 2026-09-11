@@ -7,10 +7,15 @@
 #   - Windows（需在 Git Bash 中运行，随 Git for Windows 自带；
 #     不支持在 CMD / PowerShell 直接运行）
 #
-# 通过 `git remote -v` 自动检测托管平台，路由到对应 CLI：
-#   - github.com            -> gh
-#   - gitlab.com / 自建GitLab -> glab（需 glab 已登录对应实例）
-#   - gitea / forgejo       -> tea
+# 通过 `git remote -v` 自动检测托管平台，分层路由到对应 CLI：
+#   1) 主机名启发式（快路径）：
+#        github.com / *github*（GitHub Enterprise） -> gh
+#        gitlab.com / *gitlab*                      -> glab
+#        *gitea* / *forgejo* / codeberg.org         -> tea
+#   2) 主机名无关键字（自建实例常见）：查各已安装 CLI 的授权注册表，该 host
+#      被哪个 CLI 授权就路由到哪个（gh/glab: auth status --hostname；tea: login list）。
+#   3) 仍无法判定：显式失败（exit 1）并输出该 host 的授权指引，绝不默认路由到 gh。
+#      自建 GitLab/Gitea 必须先授权对应 CLI（glab/tea），不能用 gh 访问。
 #
 # 用法：
 #   ./git-ops.sh --role <planner|developer|reviewer> <子命令> ...
@@ -97,6 +102,49 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
+# 自建实例识别（离线）：主机名无平台关键字时，查各已安装 CLI 的授权/配置注册表，
+# 判断该 host 归属哪个平台。命中返回对应 CLI（gh|glab|tea），都不命中返回非 0。
+# 顺序 gh -> glab -> tea（多命中取首个）；未安装的 CLI 跳过，查询异常一律视为未命中。
+# ---------------------------------------------------------------------------
+detect_by_registry() {
+  local host="$1"
+
+  # gh / glab：`auth status --hostname <host>` 对「已授权该 host」退出 0，对陌生 host 退出非 0
+  #（实测 gh 对非 GitHub host 恒退出非 0，故不会误认领自建 GitLab/Gitea）
+  if command -v gh >/dev/null 2>&1 && gh auth status --hostname "${host}" >/dev/null 2>&1; then
+    echo "gh"
+    return 0
+  fi
+  if command -v glab >/dev/null 2>&1 && glab auth status --hostname "${host}" >/dev/null 2>&1; then
+    echo "glab"
+    return 0
+  fi
+  # tea：login list 的 URL / SSH HOST 列含该 host 即视为已登记
+  # lazy-ladder: fixed-string 子串匹配，多个含相同子串的 tea 登录取首个命中；
+  #              需精确到 host+端口唯一时再改为按列解析比对。
+  if command -v tea >/dev/null 2>&1 && tea login list 2>/dev/null | grep -Fq -- "${host}"; then
+    echo "tea"
+    return 0
+  fi
+  return 1
+}
+
+# 自建实例无法识别时的授权指引（输出到 stderr）：列出三平台针对该 host 的授权命令
+print_selfhost_guide() {
+  local host="$1"
+  {
+    printf '────────────── 无法识别自建实例平台：%s ──────────────\n' "${host}"
+    printf '主机名无平台关键字，且没有任何已安装 CLI 授权过该实例。\n'
+    printf '为避免误用 gh 访问非 GitHub 平台，请先为该自建实例授权对应 CLI，脚本据此识别路由：\n\n'
+    printf '  [自建 GitLab]         glab auth login --hostname %s\n' "${host}"
+    printf '  [自建 Gitea/Forgejo]  tea login add            # 实例 URL 填 https://%s\n' "${host}"
+    printf '  [GitHub Enterprise]   gh auth login --hostname %s\n\n' "${host}"
+    printf '[完成后重试] ./scripts/git-ops.sh doctor\n'
+    printf '[完整指南] references/cli-setup.md\n'
+  } >&2
+}
+
+# ---------------------------------------------------------------------------
 # 平台检测：解析 git remote -v 的首个 origin URL
 # 返回值：gh | glab | tea
 # ---------------------------------------------------------------------------
@@ -142,19 +190,22 @@ detect_platform() {
     *gitea*|*forgejo*|*codeberg.org)
       echo "tea"
       ;;
+    *github*)
+      # GitHub Enterprise（如 github.corp.com）：非精确 github.com 的启发式快路径
+      echo "gh"
+      ;;
     *)
-      # 无法从主机名识别时按已安装 CLI 依次兜底
-      if command -v gh >/dev/null 2>&1; then
-        log_info "无法从 remote host '${host}' 识别平台，回退到 gh。"
-        echo "gh"
-      elif command -v glab >/dev/null 2>&1; then
-        log_info "无法从 remote host '${host}' 识别平台，回退到 glab。"
-        echo "glab"
-      elif command -v tea >/dev/null 2>&1; then
-        log_info "无法从 remote host '${host}' 识别平台，回退到 tea。"
-        echo "tea"
+      # 主机名无平台关键字（自建实例常见）：查各已安装 CLI 的授权注册表，识别该 host
+      # 真正归属哪个平台后再路由。绝不默认路由到 gh —— 用 gh 访问自建 GitLab/Gitea 会失败甚至
+      # 误操作；无法判定时显式失败并给出授权指引。
+      local registry_cli
+      if registry_cli="$(detect_by_registry "${host}")"; then
+        # 诊断走 stderr：detect_platform 的 stdout 是返回值通道，不可污染
+        log_debug "remote host '${host}' 无平台关键字，按已授权 CLI 注册表识别为 ${registry_cli}。" >&2
+        echo "${registry_cli}"
       else
-        log_error "无法识别 '${host}' 对应的 CLI（gh / glab / tea 均未安装）。"
+        log_error "无法识别 remote host '${host}' 属于哪个平台（无 CLI 已授权该实例）。"
+        print_selfhost_guide "${host}"
         exit 1
       fi
       ;;
