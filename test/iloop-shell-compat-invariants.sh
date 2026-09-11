@@ -54,6 +54,7 @@ assert_grep "$INSTALL" '\[ -e ' "migration uses an existence check '[ -e ]'"
 assert_grep "$INSTALL" '\|\| continue' "guards the no-match case with '|| continue'"
 assert_grep "$INSTALL" '仅改名；不删除' "keeps rename-only (no delete) semantics"
 assert_grep "$INSTALL" '已存在，停止（不覆盖、不删除）' "aborts if the target exists (no overwrite/delete)"
+assert_grep "$INSTALL" '~/\.agents/backups' "leftover migration target is outside skills/"
 
 echo "=== step 3 SKILL.md §0 runtime env: zsh host + bash for Agent inline shell ==="
 assert_grep "$SKILL" '运行环境.*zsh' "§0 runtime env names zsh"
