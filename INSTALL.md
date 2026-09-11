@@ -12,6 +12,8 @@
 
 Agent 收到上述请求后，必须按此协议执行；不得将“最新版”简化为直接检出 `main`。
 
+**执行环境（必须）**：本协议的所有 shell 逻辑必须在 **bash** 下执行——把逻辑写进临时 `.sh` 跑 `bash file.sh`，或用 `bash -c '<逻辑>'`；**不得**依赖宿主默认 shell。现代 macOS 默认 shell 是 zsh（亦有 fish），缺 `shopt`、`nullglob` 等 bash 内建，直接跑会 `command not found` 而中断协议（本次约定即源于一次实测：迁移循环用 `shopt -s nullglob` 在 zsh 下退出码 127）。随附脚本已带 `#!/usr/bin/env bash`，经 `./script.sh` 调用恒在 bash 下运行、天然安全。
+
 1. 确认 Git 可用，并创建 `~/.agents/skills/`（若不存在）。
 2. 从 `https://github.com/askdaddy/Git-Issue-Loop-Skill.git` 拉取 tags，选择最高的符合 `^v[0-9]+\.[0-9]+\.[0-9]+$` 的 tag。没有稳定 tag 时失败并报告，不得回退到 `main`。
 3. 将该 tag 克隆到 `~/.agents/skills/.iloop.staging-<随机值>`，以 detached HEAD 检出；记录 `git rev-parse HEAD` 的 commit SHA。
@@ -29,6 +31,17 @@ Agent 收到上述请求后，必须按此协议执行；不得将“最新版�
 更新使用相同的一句话请求。Agent 重新解析最新稳定 tag。已安装版本判定仅用于是否需要更新，不得当作 `backupPrefix` 来源：在 live 目录 `~/.agents/skills/iloop` 执行 `git describe --tags --exact-match`；若失败，则比较该目录 `git rev-parse HEAD` 与远端目标 tag 的 commit SHA。两者都失败则停止并报告，不得假设需要或不需要更新。禁止把 `skill-manifest.json` 的 `skill.version` 当作已安装 tag。只有在判定出的已安装 tag（或 SHA）与目标 tag 不同时才执行 staging → 验证 → 备份 → 切换。
 
 在备份 → 切换完成前（以及每次合规更新时），若 `~/.agents/skills/` 下存在一级目录匹配 `iloop.backup-*`（无点前缀），必须逐个 `mv` 为同名的 `.iloop.backup-*`。仅改名；不删除；不修改备份内部文件。若目标路径 `.iloop.backup-*` 已存在，停止并报告该路径，不覆盖、不删除。
+
+迁移写法**不得依赖 bash-only 的 `shopt -s nullglob`**（zsh 无此内建）；改用存在性检查处理「无匹配」，在 bash 下执行（见「Agent 安装协议 · 执行环境」）：
+
+```bash
+for d in "$BASE"/iloop.backup-*; do
+  [ -e "$d" ] || continue                        # 无匹配时 glob 保留字面量，靠存在性检查跳过
+  tgt="$BASE/.${d##*/}"
+  if [ -e "$tgt" ]; then echo "ABORT: $tgt 已存在，停止（不覆盖、不删除）"; exit 1; fi
+  mv "$d" "$tgt"                                # 仅改名，不删除
+done
+```
 
 回滚时，Agent 必须列出 `~/.agents/skills/.iloop.backup-*`；若仍存在可见的 `iloop.backup-*`，也一并列出，供用户选择。备份默认全部保留（含 `.iloop.backup-*` 与残留 `iloop.backup-*`）。未经用户明确指定，不能删除备份，也不能自动回滚。
 

@@ -60,7 +60,7 @@ description: >-
 - **平台路由**：脚本通过 `git remote -v` 自动检测并路由到对应 CLI，Agent 无需关心托管平台差异。
 - **前置自检**：进入循环前先跑 `./scripts/git-ops.sh doctor`（检查运行环境 + CLI 安装 + 授权状态）。不就绪时脚本会输出安装/授权指南并 `exit 1`，Agent 必须中止循环、把指南**原样呈现给用户**，待用户完成后重跑 `doctor` 再继续；完整指南见 `references/cli-setup.md`。
 - **凭据安全**：禁止代用户输入 token，禁止将凭据写入仓库文件、脚本、`.env` 或提交到版本库。
-- **运行环境**：仅支持 macOS 与 Windows。Windows 下 `git-ops.sh` 必须在 Git Bash 中运行（随 Git for Windows 自带），不支持 CMD / PowerShell。
+- **运行环境**：仅支持 macOS 与 Windows。Windows 下 `git-ops.sh` 必须在 Git Bash 中运行（随 Git for Windows 自带），不支持 CMD / PowerShell。macOS 宿主默认 shell 常为 zsh；Agent 执行安装/更新协议等**内联 shell** 时必须用 **bash**（zsh 缺 `shopt` / `nullglob` 等 bash 内建，直接跑会 `command not found`）。随附脚本已带 `#!/usr/bin/env bash`，经 `./script.sh` 调用恒在 bash 下运行、天然安全。
 
 ## 1. 多角色驱动机制（Persona Loading）
 
