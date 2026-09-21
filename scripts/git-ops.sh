@@ -683,18 +683,11 @@ raw_label_remove() {
       ;;
     glab)
       require_cli glab
-      # glab 移除标签：先取现有标签，剔除目标后整体覆盖
-      local current
-      current="$(glab issue view "${num}" 2>/dev/null \
-                 | sed -n 's/^Labels:[[:space:]]*//p' \
-                 | tr ',' '\n' | sed 's/^ *//;s/ *$//' \
-                 | grep -vix "${label}" | paste -sd, -)"
-      if [[ -z "${current}" ]]; then
-        glab issue update "${num}" --remove-label "${label}" >/dev/null 2>/dev/null \
-          || log_debug "标签 '${label}' 已不存在或已移除。"
-      else
-        glab issue update "${num}" --label "${current}" >/dev/null
-      fi
+      # 用官方 --unlabel 直接移除；勿改回解析 issue view 文本：
+      # glab 1.118 输出键为小写 labels:（大写匹配恒为空），且 --label 为增量语义，
+      # 「取现有标签剔除后整体覆盖」并不成立
+      glab issue update "${num}" --unlabel "${label}" >/dev/null 2>/dev/null \
+        || log_debug "标签 '${label}' 已不存在或已移除。"
       ;;
     tea)
       require_cli tea
