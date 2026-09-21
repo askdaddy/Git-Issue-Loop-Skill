@@ -98,6 +98,7 @@ Commands:
   git-ops.sh issue label <num> add <label>         添加自由标签（上下文召回用）
   git-ops.sh issue label <num> remove <label>      移除自由标签
   git-ops.sh labels init                            初始化标签体系（4 优先级 + 7 状态 + 3 重试，幂等）
+  git-ops.sh guard <role>                          可写区域越界自检（提交前必跑；role=planner|developer|reviewer）
   git-ops.sh platform                               打印检测到的托管平台
   git-ops.sh doctor                                 自检：CLI 安装与授权状态（缺失时输出指南）
 EOF
@@ -438,6 +439,59 @@ status_allowed() {
   esac
 }
 
+# ---------------------------------------------------------------------------
+# 角色可写区域（T0 铁律 1 的脚本化；与 SKILL.md §1 persona 表 / roles/*.md 同源）
+#   planner   → 仅 docs/（降级落盘）
+#   reviewer  → 仅 test/ 与 docs/issues/*/verify-report.md
+#   developer → 业务代码：除 test/ 与 docs/ 外全部，但放行 docs/issues/*/plan.md（勾选完成状态）
+# role_writable_paths 输出人类可读白名单（供 guard 失败时回显 + 验收 grep）；
+# path_writable 做实际放行判定。二者必须同步修改，避免文档与实现漂移。
+# ---------------------------------------------------------------------------
+role_writable_paths() {
+  local role="$1"
+  case "${role}" in
+    planner)   printf '%s\n' "docs/" ;;
+    reviewer)  printf '%s\n' "test/" "docs/issues/*/verify-report.md" ;;
+    developer) printf '%s\n' "（业务代码：除 test/ 与 docs/ 外全部）" "docs/issues/*/plan.md" ;;
+    *)
+      log_error "未知角色：${role}（应为 planner / developer / reviewer）。"
+      exit 1
+      ;;
+  esac
+}
+
+# 判定单个路径是否落在该角色的可写区域内（Bash 3.2 兼容：用 case 通配，禁 declare -A）
+path_writable() {
+  local role="$1" path="$2"
+  case "${role}" in
+    planner)
+      case "${path}" in
+        docs/*) return 0 ;;
+        *)      return 1 ;;
+      esac
+      ;;
+    reviewer)
+      case "${path}" in
+        test/*)                          return 0 ;;
+        docs/issues/*/verify-report.md)  return 0 ;;
+        *)                               return 1 ;;
+      esac
+      ;;
+    developer)
+      case "${path}" in
+        docs/issues/*/plan.md) return 0 ;;  # 例外先于 docs/ 拒绝
+        test/*)                return 1 ;;
+        docs/*)                return 1 ;;
+        *)                     return 0 ;;  # 业务代码默认放行
+      esac
+      ;;
+    *)
+      log_error "未知角色：${role}（应为 planner / developer / reviewer）。"
+      exit 1
+      ;;
+  esac
+}
+
 # 校验操作权限；越权直接报错退出
 # 用法：check_permission <close|reopen|priority|status|label-add|label-remove> [值]
 check_permission() {
@@ -504,6 +558,16 @@ check_permission() {
       ;;
     retry-read)
       # 只读：三角色均放行（get / reset 不限角色）
+      ;;
+    guard)
+      # 提交前自检属合法动作，三角色均放行；这里校验位置参数中的目标角色名是否合法
+      case "${value}" in
+        planner|developer|reviewer) ;;
+        *)
+          log_error "guard：未知角色 '${value}'（应为 planner / developer / reviewer）。"
+          exit 1
+          ;;
+      esac
       ;;
     *)
       # create / comment / get 等不限角色
@@ -841,6 +905,34 @@ raw_issue_labels() {
   esac
 }
 
+# 取远端「仓库级」全部标签名（每行一个），供 doctor 校验标签体系是否就绪。
+# 关键区分：CLI/网络失败时 return 1（doctor 据此报「无法获取远端标签」而非「标签缺失」）。
+#   gh   —— `gh label list --json name`（可靠机读）
+#   glab —— `glab label list` 文本，取每行首列（QA stub 须以标签名为首 token）
+#   tea  —— `tea labels list` 盒式表，名字在第 4 个 │ 字段（与 raw_label_create 同解析）
+raw_label_names() {
+  local __plat out
+  __plat="$(detect_platform)" || return 1
+  case "${__plat}" in
+    gh)
+      require_cli gh
+      if ! out="$(gh label list --limit 200 --json name --jq '.[].name' 2>/dev/null)"; then return 1; fi
+      ;;
+    glab)
+      require_cli glab
+      if ! out="$(glab label list 2>/dev/null)"; then return 1; fi
+      out="$(printf '%s\n' "${out}" | awk 'NF {print $1}')"
+      ;;
+    tea)
+      require_cli tea
+      if ! out="$(tea_cmd labels list 2>/dev/null)"; then return 1; fi
+      out="$(printf '%s\n' "${out}" | awk -F'│' '{gsub(/^[[:space:]]+|[[:space:]]+$/,"",$4); print $4}' | grep -v '^$' || true)"
+      ;;
+    *) return 1 ;;
+  esac
+  printf '%s\n' "${out}"
+}
+
 # ---------------------------------------------------------------------------
 # 自由标签（上下文召回用）：禁止操作互斥标签族
 # ---------------------------------------------------------------------------
@@ -1105,6 +1197,82 @@ cmd_doctor() {
     exit 1
   fi
   log_info "${plat} 授权正常，可以开始 RIPER 闭环。"
+
+  # 标签体系就绪检查（缺标签必然导致 issue priority/status 报 'p0' not found 而闭环失败）
+  local remote_labels
+  if ! remote_labels="$(raw_label_names)"; then
+    log_error "无法获取远端标签（网络或权限问题）——非「标签缺失」，请检查连通性与 ${plat} 授权后重试。"
+    exit 1
+  fi
+
+  local want all="${PRIORITY_LABELS} ${STATUS_LABELS} ${RETRY_LABELS}"
+  local total=0 missing=""
+  for want in ${all}; do
+    total=$((total + 1))
+    if ! printf '%s\n' "${remote_labels}" | grep -Fxq -- "${want}"; then
+      missing="${missing}  - ${want}"$'\n'
+    fi
+  done
+
+  if [[ -z "${missing}" ]]; then
+    log_info "标签体系就绪：${total}/${total}（优先级 4 + 状态 7 + 重试 3）。"
+  else
+    log_error "标签体系不完整，缺失以下标签："
+    printf '%s' "${missing}" >&2
+    log_error "请执行 ./scripts/git-ops.sh labels init 初始化后重试。"
+    exit 1
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# 可写区域越界自检（T0 铁律 1 的脚本化）：提交前必跑。
+# 以 `git status --porcelain` 取全部变更（已暂存 + 未暂存 + 未跟踪；被 .gitignore
+# 忽略的天然不列出），逐个比对 role_writable_paths / path_writable 白名单。
+# 能力边界：只能校验「区域级越界」，无法校验「是否超出 plan 范围」（design 边界 4）。
+# 用法：cmd_guard <role>
+# ---------------------------------------------------------------------------
+cmd_guard() {
+  local role="$1"
+
+  # 校验目标角色合法性（非法角色 → exit 1）；guard 动作三角色均放行
+  check_permission guard "${role}"
+  role_writable_paths "${role}" >/dev/null
+
+  local changed
+  changed="$(git status --porcelain)"
+  if [[ -z "${changed}" ]]; then
+    log_info "guard(${role}) 通过：无待检变更（工作区干净）。"
+    return 0
+  fi
+
+  local total=0 violated=0 line path violations=""
+  while IFS= read -r line; do
+    [[ -z "${line}" ]] && continue
+    # porcelain 格式：XY<space>path；重命名为 "old -> new"，取新路径
+    path="${line:3}"
+    case "${path}" in
+      *" -> "*) path="${path##* -> }" ;;
+    esac
+    path="${path%\"}"; path="${path#\"}"
+    total=$((total + 1))
+    if ! path_writable "${role}" "${path}"; then
+      violated=$((violated + 1))
+      violations="${violations}  - ${path}"$'\n'
+    fi
+  done <<EOF_STATUS
+${changed}
+EOF_STATUS
+
+  if [[ "${violated}" -eq 0 ]]; then
+    log_info "guard(${role}) 通过：${total} 个变更文件均在可写区域内。"
+    return 0
+  fi
+
+  log_error "guard(${role}) 失败：${violated}/${total} 个变更越界（T0 事故）。越界路径："
+  printf '%s' "${violations}" >&2
+  log_error "角色 ${role} 的可写区域："
+  role_writable_paths "${role}" >&2
+  exit 1
 }
 
 # ---------------------------------------------------------------------------
@@ -1144,6 +1312,10 @@ main() {
     doctor)
       [[ $# -eq 0 ]] || usage
       cmd_doctor
+      ;;
+    guard)
+      [[ $# -eq 1 ]] || usage
+      cmd_guard "$1"
       ;;
     issue)
       # list 子命令的参数全为可选，故守卫放宽为 `$# -lt 1`（裸 `issue` 仍报 usage）；

@@ -109,7 +109,7 @@
 ### E 组：可写区域 `guard`（P1 / E4）
 
 ### 步骤 11：新增 `role_writable_paths()` 白名单
-- **编号**: 11 | **完成状态**: [ ]
+- **编号**: 11 | **完成状态**: [x] ✅ 已验证：`role_writable_paths planner` 含 `docs/`、`reviewer` 含 `test/`、`developer` 含 plan.md 例外；三者互不相同；`hacker` → exit 1。配套 `path_writable` 做实际判定（Bash 3.2 case 通配，无 declare -A）
 - **涉及文件**: `scripts/git-ops.sh`（`status_allowed` 附近）
 - **逻辑说明**: `role_writable_paths <role>` 输出空格分隔的可写路径前缀白名单，与 T0 铁律 1 / `roles/*.md` 同源：`planner`→`docs/`；`developer`→除 `test/` 与 `docs/` 外全部，但放行 `docs/issues/*/plan.md`；`reviewer`→`test/` 与 `docs/issues/*/verify-report.md`。非法角色 → `log_error` + exit 1。**禁 Bash 4+ 语法（C1）**。
 - **验收标准（冻结 WHAT）**:
@@ -117,7 +117,7 @@
   - `role_writable_paths hacker` → 报错 exit 1。
 
 ### 步骤 12：新增 `cmd_guard()` 越界检测
-- **编号**: 12 | **完成状态**: [ ]
+- **编号**: 12 | **完成状态**: [x] ✅ 已验证（throwaway repo 10 例全过）：planner 改 spec.md→0、改 scripts→1；reviewer 新增 test→0、改 scripts→1、改 verify-report→0；developer 改 plan.md→0、改 spec.md→1、改 scripts→0、改 test→1；干净工作区→0
 - **涉及文件**: `scripts/git-ops.sh`
 - **逻辑说明**: `cmd_guard <role>`。以 `git status --porcelain` 取全部变更（已暂存+未暂存+未跟踪；被 .gitignore 忽略的天然不列出），逐个比对白名单：命中前缀或通配（`docs/issues/*/plan.md` 等）→ 放行；否则计入越界。合规 → `log_info "guard(<role>) 通过：N 个变更文件均在可写区域内"` + exit 0；越界 → `log_error` 逐行列越界路径 + 该角色可写区域说明 + exit 1；无变更 → exit 0 提示「无待检变更」。
 - **验收标准（冻结 WHAT）**:
@@ -127,7 +127,7 @@
   - 工作区干净 → exit 0。
 
 ### 步骤 13：`guard` 顶层路由 + `check_permission` 扩展 + usage
-- **编号**: 13 | **完成状态**: [ ]
+- **编号**: 13 | **完成状态**: [x] ✅ 已验证：`guard developer` 在本仓库 exit 0；`guard`（缺角色）→ usage exit 1；`guard hacker`→exit 1；`--help` 含 `guard <role>`（注明提交前必跑）；check_permission 新增 guard action
 - **涉及文件**: `scripts/git-ops.sh`（`main()` 顶层 `case`、`check_permission`、`usage()`）
 - **逻辑说明**: 顶层 `case` 新增 `guard)`：要求 `$# -eq 1`，调 `cmd_guard`。`check_permission` 新增 action `guard`（三角色放行，非法角色拒绝）。usage 增加 `guard <role>`（注明「提交前必跑」）。
 - **验收标准（冻结 WHAT）**:
@@ -138,7 +138,7 @@
 ### G 组：doctor 与文档同步（E6）
 
 ### 步骤 16：`cmd_doctor` 追加标签体系就绪检查
-- **编号**: 16 | **完成状态**: [ ]
+- **编号**: 16 | **完成状态**: [x] ✅ 已验证：本仓库 doctor 输出「标签体系就绪：14/14」exit 0；stub 仅返回部分标签 → 列缺失清单 + 提示 labels init + exit 1；stub 使 label list 失败 → 报「无法获取远端标签（网络或权限问题）」（非「标签缺失」）+ exit 1；前四步输出不变
 - **涉及文件**: `scripts/git-ops.sh`（`cmd_doctor`，授权检查之后）
 - **逻辑说明**: 授权检查后追加第 5 步：取远端标签名集合（gh `gh label list --limit 200 --json name --jq '.[].name'`；glab `glab label list`；tea `tea labels`），比对 14 个（PRIORITY+STATUS+RETRY）。全在 → `log_info "标签体系就绪：14/14"`；有缺失 → `log_error` 列缺失清单 + 提示 `./scripts/git-ops.sh labels init` + exit 1；**label list 命令本身失败/网络不可达 → `log_error`「无法获取远端标签（网络或权限问题）」+ exit 1，不得误报「标签缺失」**。前四步输出保持不变。
 - **验收标准（冻结 WHAT）**:
