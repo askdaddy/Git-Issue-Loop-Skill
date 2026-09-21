@@ -72,7 +72,7 @@
 ### D 组：重试计数持久化（P1 / E3）
 
 ### 步骤 8：新增 `is_retry_label()`、独立标签读取 `raw_issue_labels()`，并扩展 `check_permission`
-- **编号**: 8 | **完成状态**: [ ]
+- **编号**: 8 | **完成状态**: [x] ✅ 已验证：`is_retry_label`/`raw_issue_labels`（gh `--json labels`）就位；reviewer incr 放行、planner/developer incr 均 exit 1；planner get 放行；`issue label 1 add riper-retry-1` 被拒并提示改用 `issue retry`
 - **涉及文件**: `scripts/git-ops.sh`（判定函数区、`check_permission`）
 - **逻辑说明**:
   1. 新增 `is_retry_label()`（结构同 `is_priority_label`，遍历 `RETRY_LABELS` 全名精确匹配）。
@@ -86,7 +86,7 @@
   - `raw_issue_labels` 在 gh 宿主对 #1 输出含 `p0`（用 stub 验证 glab/tea 解析小写 `labels:`；缺标签行时输出空且 exit 0）。
 
 ### 步骤 9：新增 `cmd_issue_retry()` 排他实现
-- **编号**: 9 | **完成状态**: [ ]
+- **编号**: 9 | **完成状态**: [x] ✅ 已验证（gh 实测 #1）：初始 get=0；连 incr×3 后 get=3 且仅 riper-retry-3 一个 retry 标签；第 4 次 incr 报错转 blocked、exit 1、标签仍 retry-3；reset 后 get=0；全程 p0 与 riper-execute 未受影响（跨族无误删）
 - **涉及文件**: `scripts/git-ops.sh`
 - **逻辑说明**: `cmd_issue_retry <N> <incr|get|reset>`。`get`：`raw_issue_labels <N>` 中命中 `riper-retry-K` 输出数字 K，无则输出 `0`。`incr`：`check_permission retry-incr` → 读当前 K → 若 K≥3 则 `log_error`「已达重试上限 3 次，应转 riper-blocked」+ exit 1 → 否则移除全部 `RETRY_LABELS`（best-effort，复用 `raw_label_remove`）再 `raw_label_add` 写入 `riper-retry-$((K+1))`。`reset`：移除全部 `RETRY_LABELS`，不限角色。
 - **验收标准（冻结 WHAT）**:
@@ -97,7 +97,7 @@
   - `incr` 不影响 `p0` 与 `riper-*` 状态标签（跨族无误删）。
 
 ### 步骤 10：`issue retry` 路由 + usage
-- **编号**: 10 | **完成状态**: [ ]
+- **编号**: 10 | **完成状态**: [x] ✅ 已验证：`issue retry 1`（缺动作）→ usage exit 1；`issue retry 1 foo`（非法动作）→ usage exit 1；`--help` 含 `issue retry` 与「incr 仅 QA」说明
 - **涉及文件**: `scripts/git-ops.sh`（`issue` 子命令 `case`、`usage()`）
 - **逻辑说明**: `issue` 子命令 `case` 新增 `retry)`：校验 `$# -eq 2` 且第二参数 ∈ `incr|get|reset`（否则 usage），调 `cmd_issue_retry`。usage 增加 `issue retry <num> <incr|get|reset>`（注明 incr 仅 QA）。
 - **验收标准（冻结 WHAT）**:

@@ -94,6 +94,7 @@ Commands:
   git-ops.sh issue reopen <num>                    重新打开 Issue
   git-ops.sh issue priority <num> <p0|p1|p2|p3>    设置优先级（艾森豪威尔矩阵，排他）
   git-ops.sh issue status <num> <riper-*>          切换 RIPER 状态（排他）
+  git-ops.sh issue retry <num> <incr|get|reset>    重试计数持久化（排他 riper-retry-K；incr 仅 QA 可用）
   git-ops.sh issue label <num> add <label>         添加自由标签（上下文召回用）
   git-ops.sh issue label <num> remove <label>      移除自由标签
   git-ops.sh labels init                            初始化标签体系（4 优先级 + 7 状态 + 3 重试，幂等）
@@ -416,6 +417,13 @@ is_status_label() {
   return 1
 }
 
+# 判定标签是否属于重试计数族（riper-retry-1/2/3）
+is_retry_label() {
+  local l="$1" x
+  for x in ${RETRY_LABELS}; do [[ "${x}" == "${l}" ]] && return 0; done
+  return 1
+}
+
 # 判定某角色是否可将状态切到指定值
 status_allowed() {
   local role="$1" status="$2"
@@ -482,6 +490,20 @@ check_permission() {
         log_error "标签 '${value}' 属于互斥标签族，请改用 'issue priority' / 'issue status' 子命令（保证排他性）。"
         exit 1
       fi
+      if is_retry_label "${value}"; then
+        log_error "标签 '${value}' 属于重试计数族（排他），请改用 'issue retry <num> incr|get|reset' 子命令。"
+        exit 1
+      fi
+      ;;
+    retry-incr)
+      # 重试计数仅由 QA 在审查 FAIL 退回时登记，PM / 开发不得自增（防止执行者刷计数）
+      if [[ "${ROLE}" != "reviewer" ]]; then
+        log_error "权限拒绝：重试计数由 QA（reviewer）在审查 FAIL 时登记，${ROLE} 无权 incr。"
+        exit 1
+      fi
+      ;;
+    retry-read)
+      # 只读：三角色均放行（get / reset 不限角色）
       ;;
     *)
       # create / comment / get 等不限角色
@@ -787,6 +809,38 @@ raw_label_remove() {
   esac
 }
 
+# 读取某 Issue 的标签名（每行一个），机读优先：
+#   gh 用 `--json labels`（规避 #17：`--comments` 会吞掉头部导致标签读不到）；
+#   glab/tea 解析视图输出中的小写 `labels:` 行（**禁用**大写 `Labels:` sed —— #14 已证伪）。
+# 取不到标签时输出空且 return 0（上层据此判定「无 retry 标签 → K=0」）。
+raw_issue_labels() {
+  local num="$1"
+  local __plat
+  __plat="$(detect_platform)" || exit 1
+  case "${__plat}" in
+    gh)
+      require_cli gh
+      gh issue view "${num}" --json labels --jq '.labels[].name' 2>/dev/null || true
+      ;;
+    glab)
+      require_cli glab
+      glab issue view "${num}" 2>/dev/null \
+        | sed -n 's/^labels:[[:space:]]*\(.*\)$/\1/p' \
+        | tr ',' '\n' \
+        | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+        | grep -v '^$' || true
+      ;;
+    tea)
+      require_cli tea
+      tea_cmd issues "${num}" 2>/dev/null \
+        | sed -n 's/^labels:[[:space:]]*\(.*\)$/\1/p' \
+        | tr ',' '\n' \
+        | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+        | grep -v '^$' || true
+      ;;
+  esac
+}
+
 # ---------------------------------------------------------------------------
 # 自由标签（上下文召回用）：禁止操作互斥标签族
 # ---------------------------------------------------------------------------
@@ -840,6 +894,59 @@ cmd_issue_status() {
   done
   raw_label_add "${num}" "${status}"
   log_info "状态已切换为 ${status}（同族状态标签已排他清理）。"
+}
+
+# ---------------------------------------------------------------------------
+# 重试计数持久化：把 QA 审查 FAIL 的轮次落到排他的 riper-retry-K 标签上。
+# 用法：cmd_issue_retry <num> <incr|get|reset>
+#   get   —— 读当前 K（命中 riper-retry-K 输出 K，无则输出 0）；不限角色（retry-read）。
+#   incr  —— 仅 QA：K≥3 则报错转 riper-blocked；否则排他清理后写入 riper-retry-$((K+1))。
+#   reset —— 排他清理全部 retry 标签（新一轮闭环清零）；不限角色。
+# 跨族安全：仅触碰 RETRY_LABELS，绝不影响 p0~p3 与 riper-* 状态标签。
+# ---------------------------------------------------------------------------
+cmd_issue_retry() {
+  local num="$1" action="$2"
+
+  # 读当前重试计数 K：扫描该 Issue 标签，命中 riper-retry-<K> 取 K，否则 0
+  local cur=0 lab
+  while IFS= read -r lab; do
+    case "${lab}" in
+      riper-retry-[1-9]) cur="${lab#riper-retry-}" ;;
+    esac
+  done < <(raw_issue_labels "${num}")
+
+  case "${action}" in
+    get)
+      check_permission retry-read
+      printf '%s\n' "${cur}"
+      ;;
+    reset)
+      check_permission retry-read
+      local l
+      for l in ${RETRY_LABELS}; do
+        raw_label_remove "${num}" "${l}" || true
+      done
+      log_info "重试计数已清零（移除全部 riper-retry-* 标签）。"
+      ;;
+    incr)
+      check_permission retry-incr
+      if [[ "${cur}" -ge 3 ]]; then
+        log_error "已达重试上限 3 次（当前 riper-retry-${cur}），应转 riper-blocked 等待人工介入，不再自增。"
+        exit 1
+      fi
+      local next=$((cur + 1)) l
+      # 排他：先移除同族其他 retry 标签，再写入 next
+      for l in ${RETRY_LABELS}; do
+        [[ "${l}" == "riper-retry-${next}" ]] && continue
+        raw_label_remove "${num}" "${l}" || true
+      done
+      raw_label_add "${num}" "riper-retry-${next}"
+      log_info "重试计数已登记为 riper-retry-${next}（同族已排他清理）。"
+      ;;
+    *)
+      usage
+      ;;
+  esac
 }
 
 # ---------------------------------------------------------------------------
@@ -1073,6 +1180,14 @@ main() {
         status)
           [[ $# -eq 2 ]] || usage
           cmd_issue_status "$1" "$2"
+          ;;
+        retry)
+          [[ $# -eq 2 ]] || usage
+          case "$2" in
+            incr|get|reset) ;;
+            *) usage ;;
+          esac
+          cmd_issue_retry "$1" "$2"
           ;;
         create)
           [[ $# -eq 2 ]] || usage
