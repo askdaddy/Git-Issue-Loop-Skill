@@ -56,13 +56,14 @@ description: >-
 6. **优先级与状态标签必须用平台原生 label 能力表达，禁止写进 Issue 标题**；两族标签各自**排他**（同时只能存在一个）。
 7. 上述权限由 `git-ops.sh --role <角色>` 在脚本层硬性强制，Agent 不得以任何方式绕过。
 8. **Issue 操作必须优先使用本地官方 CLI**（GitHub→`gh`，GitLab→`glab`，Gitea/Forgejo→`tea`），由 `git-ops.sh` 自动路由；**禁止**改用 REST API + 手写 token、网页点击或其他绕行方式。本地缺 CLI 或未授权时，**必须停下来把安装/授权指南交给用户**，不得代填凭据、不得跳过 Issue 写回步骤。
+9. **提交前必须执行 `./scripts/git-ops.sh guard <当前角色>`，越界即 T0 事故**：脚本以 `git status --porcelain` 比对角色可写区域白名单（PM=`docs/`；开发=除 `test/` 与 `docs/` 外全部，但放行 `docs/issues/<N>/plan.md`；QA=`test/` 与 `docs/issues/<N>/verify-report.md`），命中越界路径即 `exit 1`，必须修正后再提交。**能力边界（如实声明）**：`guard` 只能校验「区域级越界」（文件落在哪个目录），**无法**校验「是否超出 `plan.md` 范围」——后者仍依赖角色自律与 [R] 审查阶段的越界判定。
 
 ## 0. 核心约定
 
 - **唯一事实来源**：Issue（正文 + 评论 + 标签）为主；本地 `docs/issues/<N>/` 仅为**降级 fallback，不是持久化副本**——远程可用时不得双写。
 - **降级落盘位置**：`docs/issues/<N>/`（spec.md / design.md / plan.md / verify-report.md），基于 `templates/` 填充，仅当远程 Issue 不可用时使用；用户显性指定时以用户为准。
 - **测试脚本位置**：QA 的黑盒测试脚本默认落 `test/`；用户显性指定时以用户为准。
-- **Git 操作**：一律通过 `scripts/git-ops.sh` 执行，禁止直接调用 `gh` / `glab` / `tea`。Agent 调用时**必须携带 `--role <当前角色>`**，脚本按 §1.1 权限矩阵与 §1.2 标签体系硬性校验。
+- **Git 操作**：一律通过 `scripts/git-ops.sh` 执行，禁止直接调用 `gh` / `glab` / `tea`。Agent 调用时**必须携带 `--role <当前角色>`**，脚本按 §1.1 权限矩阵与 §1.2 标签体系硬性校验。子命令清单：`issue list|get|comment|create|close|reopen|priority|status|retry|label`、`labels init`、`guard <role>`、`platform`、`doctor`。
 - **平台路由**：脚本通过 `git remote -v` 自动检测并路由到对应 CLI，Agent 无需关心托管平台差异。
 - **前置自检**：进入循环前先跑 `./scripts/git-ops.sh doctor`（检查运行环境 + CLI 安装 + 授权状态）。不就绪时脚本会输出安装/授权指南并 `exit 1`，Agent 必须中止循环、把指南**原样呈现给用户**，待用户完成后重跑 `doctor` 再继续；完整指南见 `references/cli-setup.md`。
 - **凭据安全**：禁止代用户输入 token，禁止将凭据写入仓库文件、脚本、`.env` 或提交到版本库。
@@ -127,8 +128,20 @@ description: >-
 
 切换方式：`./scripts/git-ops.sh --role <角色> issue status <N> <状态>`（脚本自动清理同族其他状态）。
 
-**（3）自由标签（可选，不排他）**：Agent 可自行定义用于上下文召回，如 `module/auth`、`type/bug`、`area/cli`。
-通过 `issue label <N> add|remove <标签>` 操作；脚本禁止用该子命令触碰上述两个互斥族。
+**（3）重试计数族（排他，持久化 QA 审查 FAIL 的轮次）**
+
+`riper-retry-1` → `riper-retry-2` → `riper-retry-3`（同时只存在一个，达 3 即上限）。把"已重试几次"落到 Issue 标签上，避免依赖 Agent 跨会话记忆。
+
+| 操作 | 可设置角色 | 说明 |
+|------|-----------|------|
+| `issue retry <N> incr` | **仅 QA（reviewer）** | 审查 FAIL 退回 `riper-plan` 时登记 +1；当前已为 `riper-retry-3` 时拒绝并提示转 `riper-blocked` |
+| `issue retry <N> get` | 三角色（只读） | 输出当前 K（无 retry 标签输出 `0`），供判定是否超限 |
+| `issue retry <N> reset` | 三角色 | 清零（移除全部 `riper-retry-*`），新一轮闭环开始时用 |
+
+唯一入口：`./scripts/git-ops.sh --role reviewer issue retry <N> <incr|get|reset>`（脚本自动排他清理同族）。`issue label` 子命令被禁止触碰本族。
+
+**（4）自由标签（可选，不排他）**：Agent 可自行定义用于上下文召回，如 `module/auth`、`type/bug`、`area/cli`。
+通过 `issue label <N> add|remove <标签>` 操作；脚本禁止用该子命令触碰上述三个互斥族（优先级 / 状态 / 重试）。
 
 ## 2. SDD 核心原则（Spec-Driven Development，不可违反）
 
@@ -149,7 +162,7 @@ description: >-
    - `status=untagged`（exit 2）→ 说明当前为非稳定安装并列出 `latest_tag`；默认继续本轮，用户也可选择改去安装稳定版。
    - 检查失败（exit 1，含网络 / 非 git / 无稳定 tag）→ 在对话中声明后**不阻塞**，继续 doctor。
 2. 执行 `./scripts/git-ops.sh doctor`（在**目标项目**仓库根）：依次确认运行环境（macOS / Windows Git Bash）、remote 路由到的 CLI、CLI 已安装、CLI 已授权。
-3. doctor 通过后，若本次会话尚未执行过，运行 `./scripts/git-ops.sh labels init`（幂等）：确保优先级 / 状态 / 重试三族标签在平台上存在，避免后续 `issue priority` / `issue status` 因标签缺失而中止。
+3. doctor 通过后，若本次会话尚未执行过，运行 `./scripts/git-ops.sh labels init`（幂等）：确保优先级 / 状态 / 重试 / 自由标签所需的 14 个内置标签（4 优先级 + 7 状态 + 3 重试）在平台上存在，避免后续 `issue priority` / `issue status` / `issue retry` 因标签缺失而中止。doctor 也会检查这套标签是否就绪，缺失即 `exit 1` 并提示运行 `labels init`。
 4. **全部通过** → 进入 §3.0.1 启动分发。**禁止在分发完成之前读取任何 `roles/*.md`。**
 5. **CLI 缺失或未授权** → 立即中止，把脚本输出的安装/授权指南（或 `references/cli-setup.md` 对应章节）原样交给用户，说明需要完成的具体动作；用户确认完成后重跑 `doctor`，通过再从中断阶段继续。
 6. 严禁绕行：不得改用 curl + REST API、不得猜测/代填 token、不得跳过 Issue 侧的读写步骤。
@@ -322,11 +335,11 @@ Issue(编号 N)
   2. 评论总结闭环结论；
   3. 由 QA 执行 `./scripts/git-ops.sh --role reviewer issue close <N>` 关闭 Issue（关闭权专属 QA），结束循环。
 - **存在 FAIL**：
-  1. 计入重试计数（**防死循环：最多重试 3 次**）；
+  1. 登记重试计数（**防死循环：最多重试 3 次**）：`./scripts/git-ops.sh --role reviewer issue retry <N> incr`（排他写入 `riper-retry-K`，不依赖 Agent 记忆）；
   2. QA 退回计划：`./scripts/git-ops.sh --role reviewer issue status <N> riper-plan`，并评论失败分析；
   3. PM 修订计划（主路径在 Issue 评论中修订；降级模式下修订本地 `plan.md`）并同步评论；
   4. 重新走 [E] → [R]。
-- **重试 3 次仍有 FAIL**：停止循环，`./scripts/git-ops.sh --role reviewer issue status <N> riper-blocked`，在 Issue 下评论说明卡点，等待人工介入。
+- **重试已达上限仍有 FAIL**（`./scripts/git-ops.sh --role reviewer issue retry <N> get` 返回 `3`，此时 `incr` 也会被拒绝）：停止循环，`./scripts/git-ops.sh --role reviewer issue status <N> riper-blocked`，在 Issue 下评论说明卡点，等待人工介入。
 
 ## 4. 快速用法
 
@@ -341,6 +354,17 @@ Issue(编号 N)
 "排 plan，不要执行"           → 口头覆盖：只走到计划写回（入口已超过计划则报告并停止）
 "检查环境 / cli 没装"          → 执行 doctor，输出安装与授权指南
 "检查 skill 更新"              → 在 Skill 根运行 scripts/check-update.sh；有更高稳定 tag 则询问是否按 INSTALL.md 升级
+```
+
+**常用脚本子命令（一律经 `scripts/git-ops.sh`，携带 `--role`）**：
+
+```
+./scripts/git-ops.sh labels init                                  → 初始化 14 个内置标签（4 优先级 + 7 状态 + 3 重试，幂等；新仓库首次必跑）
+./scripts/git-ops.sh issue list [--state open|closed|all] [--status <riper-*>] [--priority <p0..p3>]
+                                                                  → 列出 Issue，按优先级 p0→p3 排序（glab/tea 无标签列时降级）
+./scripts/git-ops.sh --role reviewer issue retry <N> <incr|get|reset> → 重试计数持久化（incr 仅 QA；get/reset 不限角色）
+./scripts/git-ops.sh guard <role>                                 → 可写区域越界自检（提交前必跑；越界 exit 1）
+./scripts/git-ops.sh doctor                                       → 环境 + CLI + 授权 + 标签体系就绪自检
 ```
 
 ## 5. 安装与注册（让 `/iloop` 生效）

@@ -148,7 +148,7 @@
   - 前四步（环境/路由/安装/授权）输出与改动前一致。
 
 ### 步骤 17：`SKILL.md` 同步（四族 retry / 新命令 / guard 铁律）
-- **编号**: 17 | **完成状态**: [ ]
+- **编号**: 17 | **完成状态**: [x] ✅ 已验证：§1.2 补第四族 riper-retry（排他、incr 仅 QA）；§3.7「计入重试计数」改为 `issue retry incr`、「重试 3 次」改为 `retry get` 返回 3；§4 补 issue list/retry/guard/labels init；§0 Git 操作补子命令清单；T0 新增第 9 条 guard 铁律含能力边界声明；全文无「三族」残留、无新增「实现 issue get --json」指引（仅保留 §3.0.1 既有禁止表述）
 - **涉及文件**: `SKILL.md`
 - **逻辑说明**: (a) §1.2 标签体系正式补**第四族 `riper-retry-1/2/3`**（排他，仅 QA 可 incr），与既有「优先级/状态/自由标签」并列；(b) §1.2 后或 §3.7 明确 `issue retry <N> incr|get|reset` 为重试计数唯一入口，§3.7「计入重试计数」改为调用 `issue retry incr`、「重试 3 次」改为「`retry get` 返回 3」；(c) §4 快速用法补 `issue list` / `issue retry` / `guard` / `labels init` 行；(d) §0「Git 操作」补新增子命令清单；(e) T0 铁律追加「提交前必须 `guard <当前角色>`，越界即 T0 事故」，并**如实声明 guard 只校验区域级越界、无法校验是否超出 plan 范围**。**不得新增「实现 issue get --json」相关表述**（与 §3.0.1 现行约束一致）。
 - **验收标准（冻结 WHAT）**:
@@ -156,14 +156,14 @@
   - 全文无「三族标签」等与实现矛盾的残留；无「实现 issue get --json」的新增指引。
 
 ### 步骤 18：`roles/*.md` 三文件补 guard 义务
-- **编号**: 18 | **完成状态**: [ ]
+- **编号**: 18 | **完成状态**: [x] ✅ 已验证：三文件均在「Issue 操作权限」补 guard 约定 + 「必须做」补对应条目；声明的可写区域与 `role_writable_paths` 实际输出逐字一致（planner=docs/；reviewer=test/+verify-report；developer=禁 test/、除 plan.md 外禁 docs/）；开头「用户可随时修改本文件」提示 3/3 保留
 - **涉及文件**: `roles/planner.md`、`roles/developer.md`、`roles/reviewer.md`
 - **逻辑说明**: 各在「Issue 操作权限」小节后新增一条 `guard` 约定，与各自 T0 可写区域**逐字对应**步骤 11 白名单：PM「提交/交付前跑 `guard planner`，可写区域仅 `docs/`」；开发「提交前跑 `guard developer`，禁写 `test/`、除 `docs/issues/<N>/plan.md` 外禁写 `docs/`」；QA「交付验收报告前跑 `guard reviewer`，可写区域仅 `test/` 与 `docs/issues/<N>/verify-report.md`」。并在各自「必须做」清单加对应条目。保留各文件开头「用户可随时修改本文件」提示。
 - **验收标准（冻结 WHAT）**:
   - 三文件均出现 `guard <角色>` 与对应可写区域清单，且与 `role_writable_paths` 实际返回一致；开头提示未被覆盖。
 
 ### 步骤 19：`references/cli-setup.md` 追加标签初始化章节
-- **编号**: 19 | **完成状态**: [ ]
+- **编号**: 19 | **完成状态**: [x] ✅ 已验证：cli-setup.md 新增「标签体系初始化」小节（§0 之后），含 labels init 示例、幂等说明、14 标签清单（与三族常量逐字一致）、doctor 检查说明、各平台最小权限（GitHub 需 repo scope）、典型报错 `'p0' not found`
 - **涉及文件**: `references/cli-setup.md`
 - **逻辑说明**: 新增「标签体系初始化」一节：为何需要（priority/status 依赖标签存在，缺失即 `'p0' not found`）、命令 `./scripts/git-ops.sh labels init`、幂等说明、14 标签清单（4+7+3）、doctor 会检查该项、各平台最小权限（GitHub 需 `repo` scope 建标签）。
 - **验收标准（冻结 WHAT）**:

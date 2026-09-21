@@ -11,8 +11,8 @@
 ./scripts/git-ops.sh doctor
 ```
 
-输出会依次给出：运行环境 → 路由到的 CLI → 安装状态 → 授权状态。
-任一项不就绪时，脚本会打印对应的安装/授权指南并以 `exit 1` 中止——此时 **Agent 必须停止 RIPER 循环，把指南原样呈现给用户**，等用户完成后再继续。
+输出会依次给出：运行环境 → 路由到的 CLI → 安装状态 → 授权状态 → 标签体系就绪（14/14）。
+任一项不就绪时，脚本会打印对应的安装/授权指南（或缺失标签清单 + `labels init` 提示）并以 `exit 1` 中止——此时 **Agent 必须停止 RIPER 循环，把指南原样呈现给用户**，等用户完成后再继续。
 
 单独查看路由结果：
 
@@ -29,6 +29,29 @@
 3. **无法判定则显式失败**：脚本 `exit 1` 并打印该 host 的授权指引，**绝不默认路由到 `gh`**。
 
 > **自建实例必须先授权对应 CLI**：自建 GitLab 用 `glab auth login --hostname <host>`、自建 Gitea/Forgejo 用 `tea login add`（实例 URL 填 `https://<host>`）、GitHub Enterprise 用 `gh auth login --hostname <host>`。授权后脚本才能据注册表识别归属。**用 `gh` 访问自建 GitLab/Gitea 一定失败**——它们不是同一套 API。
+
+### 标签体系初始化
+
+**为何需要**：`issue priority` / `issue status` / `issue retry` 都依赖平台上已存在对应标签；标签缺失时这些命令会因平台报 `'p0' not found`（或同类「标签不存在」错误）而 `exit 1`，导致闭环在第一次设置优先级/状态时就卡死（bootstrap 死锁）。
+
+**命令**（新仓库克隆后、进入 RIPER 循环前执行一次）：
+
+```bash
+./scripts/git-ops.sh labels init
+```
+
+- **幂等**：标签不存在则创建，已存在则更新颜色与描述；重复执行安全，不会报错也不会产生重复标签（Gitea 对非 scoped 名称不查重，脚本以「先查存在再创建」保证幂等）。
+- **doctor 会检查**：`./scripts/git-ops.sh doctor` 的最后一步会比对远端标签是否齐全，缺失即列出清单、提示运行 `labels init` 并 `exit 1`；若 `label list` 本身失败（网络/权限），则报「无法获取远端标签」而非误报「标签缺失」。
+
+**14 个内置标签清单**（与脚本三族常量完全一致）：
+
+| 族 | 标签 |
+|----|------|
+| 优先级（4） | `p0` `p1` `p2` `p3` |
+| 状态（7） | `riper-research` `riper-innovation` `riper-plan` `riper-execute` `riper-review` `riper-verified` `riper-blocked` |
+| 重试（3） | `riper-retry-1` `riper-retry-2` `riper-retry-3` |
+
+**各平台最小权限**：建标签需要写权限——GitHub 的 `gh` 需 `repo` scope（仅 `read` 不足以创建标签）；GitLab 的 `glab` 需 Developer 及以上角色；Gitea/Forgejo 的 `tea` 需对仓库有写权限。权限不足时 `labels init` 会在对应标签上报 FAILED 并 `exit 1`。
 
 ## 1. GitHub → `gh`
 

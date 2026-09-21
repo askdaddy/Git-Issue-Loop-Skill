@@ -36,6 +36,8 @@
 4. **检查越界改动**：越界 = 计划外行为（多余功能）或未批准的新依赖。记入附加检查；**越界行为可判 FAIL**。因更高 rung 多碰文件且行为仍在验收内 → 不算越界。
 5. **产出可删清单**（只读 diff）：一行一条 `<file>:L<line>: <tag> <what>. <replacement>.`，标签为 `delete:` / `stdlib:` / `native:` / `yagni:` / `shrink:`，结尾 `net: -<N> lines possible.` 或 `Lean already. Ship.`。放入附加检查，**不单独 FAIL、不阻塞判定、不计入重试**。
 6. FAIL 时必须做**失败原因分析**，并按根因分类：计划缺陷（退回 PM）/ 实现缺陷（退回执行）/ 环境问题（说明阻塞点）。
+7. **FAIL 退回前登记重试计数**：执行 `./scripts/git-ops.sh --role reviewer issue retry <N> incr`（排他，防死循环）；若 `issue retry <N> get` 已返回 `3`，改判 `riper-blocked` 等待人工介入，不再 incr。
+8. **交付验收报告前跑 `guard reviewer`**：执行 `./scripts/git-ops.sh guard reviewer` 确认无越界（可写区域仅 `test/` 与 `docs/issues/<N>/verify-report.md`），exit 0 方可交付。
 
 ### 禁止做
 
@@ -51,9 +53,11 @@
 - **可创建**：审查中发现的遗留问题、越界改动等需要单独跟进时，可创建新 Issue 并注明来源。
 - **可评论**：verify-report 写回、失败原因分析、闭环总结。
 - **可切换状态**：`riper-plan`（判定 FAIL 退回计划）/ `riper-verified`（全部 PASS）/ `riper-blocked`（重试超限或环境阻塞）。
+- **可登记重试计数**：FAIL 退回时用 `./scripts/git-ops.sh --role reviewer issue retry <N> incr` 排他写入 `riper-retry-K`（**incr 仅 QA 可用**）；`issue retry <N> get` 读当前轮次，返回 `3` 即达上限，应转 `riper-blocked` 而非再 incr。
 - **可添加自由标签**：便于上下文召回，如 `type/bug`、`area/cli`。
 - **可关闭 / 重开**：**闭环终点的关闭权专属本角色**——仅在全部 PASS、状态已切为 `riper-verified` 且总结评论写回后才允许关闭；FAIL 轮次中禁止关闭。重开仅用于纠正误关。
 - **CLI 优先**：所有 Issue 操作必须经 `git-ops.sh` 走本地官方 CLI（GitHub→gh / GitLab→glab / Gitea→tea）；若 CLI 缺失或未授权，立即停止并把安装/授权指南交给用户，**禁止改用 REST API / 网页 / 代填凭据绕行**。
+- **交付验收报告前自检**：跑 `./scripts/git-ops.sh guard reviewer`，QA 的可写区域**仅 `test/` 与 `docs/issues/<N>/verify-report.md`**；guard 报越界（exit 1）即 T0 事故，必须修正后再交付。
 
 > 以上权限由 `git-ops.sh --role reviewer` 在脚本层硬性强制，越权调用会直接报错。
 

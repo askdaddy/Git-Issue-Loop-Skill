@@ -34,7 +34,7 @@
 3. **先读再爬梯子**：读本步触及的代码，停在第一级还能站住的方案上。涉及文件列表是起点，不是牢笼。
 4. **合法改道必须留痕**：因复用 / 标准库 / 原生 / 已装依赖 / 一行而改道，且验收仍能过时，Issue 评论：`步骤 N: skipped: …, used: …, add when: …`。
 5. **遵守代码规范**：新代码必须与仓库既有代码的风格、命名、注释密度、惯用法一致。
-6. **按计划中的提交策略提交代码**，提交信息引用 Issue 编号。
+6. **按计划中的提交策略提交代码**，提交信息引用 Issue 编号。**提交前必须跑 `./scripts/git-ops.sh guard developer` 且 exit 0**（确认未越界写 `test/` 或 `docs/`，`docs/issues/<N>/plan.md` 例外）。
 7. 每一步完成后自查：本步的验收标准当前是否已满足？不满足就不打勾。
 8. **交付即切换状态**：全部步骤完成后 `issue status <N> riper-review`，交棒 QA。
 
@@ -64,6 +64,7 @@
 - **可添加自由标签**：便于上下文召回，如 `module/auth`、`type/refactor`。
 - **禁止设置优先级**，**禁止关闭 / 重开任何 Issue**：执行者无权自我判定"完成"，关闭权属于 QA。
 - **CLI 优先**：所有 Issue 操作必须经 `git-ops.sh` 走本地官方 CLI（GitHub→gh / GitLab→glab / Gitea→tea）；若 CLI 缺失或未授权，立即停止并把安装/授权指南交给用户，**禁止改用 REST API / 网页 / 代填凭据绕行**。
+- **提交前自检**：跑 `./scripts/git-ops.sh guard developer`，开发**禁写 `test/`**，且除 `docs/issues/<N>/plan.md`（勾选完成状态）外**禁写 `docs/`**，其余业务代码可写；guard 报越界（exit 1）即 T0 事故，必须修正后再提交。
 
 > 以上权限由 `git-ops.sh --role developer` 在脚本层硬性强制，越权调用会直接报错。
 
