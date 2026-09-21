@@ -85,6 +85,8 @@ Usage:
     priority 仅 planner 可设；status 按角色白名单校验。
 
 Commands:
+  git-ops.sh issue list [--state open|closed|all] [--status <riper-*>] [--priority <p0|p1|p2|p3>]
+                                                  列出 Issue（按优先级 p0→p3 排序；glab/tea 无标签列时降级）
   git-ops.sh issue get <num>                       获取 Issue 详情（含正文与评论）
   git-ops.sh issue comment <num> "<content>"       给 Issue 添加评论
   git-ops.sh issue create "<title>" "<body>"       创建新 Issue
@@ -544,6 +546,88 @@ raw_issue_list() {
   esac
 }
 
+# 列出 Issue：在 raw_issue_list 的四列 TAB 中间格式上做筛选 + 优先级排序 + 对齐输出。
+# 用法：cmd_issue_list [--state open|closed|all] [--status <riper-*>] [--priority <p0|p1|p2|p3>]
+# 排序键：p0<p1<p2<p3<无优先级；Bash 3.2 兼容（加数字前缀 sort -n 后剥离，禁 declare -A）。
+cmd_issue_list() {
+  local state="open" want_status="" want_prio=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --state)    [[ $# -ge 2 ]] || { log_error "--state 需要参数（open|closed|all）。"; exit 1; };    state="$2";       shift 2 ;;
+      --status)   [[ $# -ge 2 ]] || { log_error "--status 需要参数（riper-*）。"; exit 1; };            want_status="$2"; shift 2 ;;
+      --priority) [[ $# -ge 2 ]] || { log_error "--priority 需要参数（p0|p1|p2|p3）。"; exit 1; };      want_prio="$2";   shift 2 ;;
+      *) log_error "未知参数：'$1'（合法：--state open|closed|all / --status <riper-*> / --priority <p0|p1|p2|p3>）。"; exit 1 ;;
+    esac
+  done
+
+  case "${state}" in
+    open|closed|all) ;;
+    *) log_error "非法 --state：'${state}'（合法值：open closed all）。"; exit 1 ;;
+  esac
+  if [[ -n "${want_prio}" ]] && ! is_priority_label "${want_prio}"; then
+    log_error "非法 --priority：'${want_prio}'（合法值：${PRIORITY_LABELS}）。"; exit 1
+  fi
+  if [[ -n "${want_status}" ]] && ! is_status_label "${want_status}"; then
+    log_error "非法 --status：'${want_status}'（合法值：${STATUS_LABELS}）。"; exit 1
+  fi
+
+  local raw
+  raw="$(raw_issue_list "${state}")"
+  if [[ -z "${raw}" ]]; then
+    log_info "（无 state='${state}' 的 Issue）"
+    return 0
+  fi
+
+  # 探测标签列是否可用（glab/tea 列表降级时第四列为空 → C2 显式降级）
+  local labels_avail=0 _n _s _t _l
+  while IFS="$(printf '\t')" read -r _n _s _t _l; do
+    [[ -n "${_l}" ]] && { labels_avail=1; break; }
+  done <<EOF_RAW
+${raw}
+EOF_RAW
+  if [[ "${labels_avail}" -eq 0 ]]; then
+    log_debug "本平台列表输出不含标签列（C2 降级）：优先级/状态显示为 (无)，标签类筛选不可用。" >&2
+    if [[ -n "${want_status}" || -n "${want_prio}" ]]; then
+      log_error "本平台（glab/tea）列表不含标签列，--status / --priority 筛选不可用，已忽略该筛选。"
+    fi
+    want_status=""; want_prio=""
+  fi
+
+  # 过滤 + 计算排序键 → 输出「key<TAB>num<TAB>prio<TAB>status<TAB>title」→ 排序 → 对齐表格
+  {
+    local num st title labels tok prio disp key
+    while IFS="$(printf '\t')" read -r num st title labels; do
+      [[ -z "${num}" ]] && continue
+      prio=""; disp=""
+      for tok in $(printf '%s' "${labels}" | tr ',' ' '); do
+        case "${tok}" in
+          p0|p1|p2|p3)   [[ -z "${prio}" ]] && prio="${tok}" ;;
+          riper-retry-*) : ;;
+          riper-*)       [[ -z "${disp}" ]] && disp="${tok}" ;;
+        esac
+      done
+      if [[ -n "${want_status}" ]]; then
+        case ",${labels}," in *",${want_status},"*) ;; *) continue ;; esac
+      fi
+      if [[ -n "${want_prio}" ]]; then
+        case ",${labels}," in *",${want_prio},"*) ;; *) continue ;; esac
+      fi
+      [[ -z "${prio}" ]] && prio="(无)"
+      [[ -z "${disp}" ]] && disp="${st}"
+      case "${prio}" in p0) key=0 ;; p1) key=1 ;; p2) key=2 ;; p3) key=3 ;; *) key=4 ;; esac
+      printf '%s\t%s\t%s\t%s\t%s\n' "${key}" "${num}" "${prio}" "${disp}" "${title}"
+    done <<EOF_ROWS
+${raw}
+EOF_ROWS
+  } | sort -t"$(printf '\t')" -k1,1n -k2,2n | {
+    printf '%-7s %-7s %-19s %s\n' "编号" "优先级" "状态" "标题"
+    local key num prio disp title
+    while IFS="$(printf '\t')" read -r key num prio disp title; do
+      printf '%-7s %-7s %-19s %s\n' "#${num}" "${prio}" "${disp}" "${title}"
+    done
+  }
+}
+
 # 获取 Issue 详情：gh/glab/tea 均支持 `issue view <num> --comments`
 cmd_issue_get() {
   local num="$1"
@@ -955,12 +1039,17 @@ main() {
       cmd_doctor
       ;;
     issue)
-      if [[ $# -lt 2 ]]; then
+      # list 子命令的参数全为可选，故守卫放宽为 `$# -lt 1`（裸 `issue` 仍报 usage）；
+      # 其余子命令在各自分支内做 `[[ $# -eq N ]] || usage` 精确校验，不受影响。
+      if [[ $# -lt 1 ]]; then
         usage
       fi
       local sub="$1"
       shift
       case "${sub}" in
+        list)
+          cmd_issue_list "$@"
+          ;;
         get)
           [[ $# -eq 1 ]] || usage
           cmd_issue_get "$1"
