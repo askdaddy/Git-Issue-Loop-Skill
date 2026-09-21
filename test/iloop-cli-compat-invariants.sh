@@ -125,11 +125,19 @@ probe() {
 echo "=== step 1: tea check_auth — no SIGPIPE false-negative under pipefail ==="
 
 # 1a: behavioral — doctor on gitea fixture must pass 20/20 (random 141 == bug).
+# NOTE: since Issue #1 step 16, doctor also checks label-readiness (14/14) AFTER
+# the auth step. Seed TEA_STATE with all 14 labels so this probe isolates the
+# check_auth SIGPIPE behaviour it was written for (auth runs before label check).
+printf '%s\n' p0 p1 p2 p3 riper-research riper-innovation riper-plan riper-execute \
+  riper-review riper-verified riper-blocked riper-retry-1 riper-retry-2 riper-retry-3 \
+  > "$WORK/tea_doctor_labels.state"
+TEA_STATE="$WORK/tea_doctor_labels.state"; export TEA_STATE
 ok=0
 for i in $(seq 1 20); do
   probe "$GITEA_REPO" "$WORK/teabin" doctor
   [[ "$RC" -eq 0 ]] && ok=$((ok + 1))
 done
+unset TEA_STATE
 if [[ "$ok" -eq 20 ]]; then
   pass "tea doctor authorized 20/20 runs (no random SIGPIPE 141)"
 else

@@ -135,21 +135,29 @@ else
   fail "target priority label not added"
 fi
 
-echo "=== step 1e: structural evidence — broken pattern removed from script ==="
-if [[ "$(grep -c 'glab issue view' "$GITOPS")" -eq 1 ]] && grep -q 'glab issue view "${num}" --comments' "$GITOPS"; then
-  pass "'glab issue view' remains only in cmd_issue_get"
+echo "=== step 1e: structural evidence — broken removal pattern absent ==="
+# cmd_issue_get still uses `glab issue view ... --comments` (unchanged). Since
+# Issue #1 step 8, raw_issue_labels ALSO calls `glab issue view` to READ labels
+# (lowercase `labels:` parse) for the retry counter — an approved read path, not
+# the disproven removal-by-text-parse. So the brittle "exactly 1 occurrence"
+# count is dropped; the removal contract is guarded by the --unlabel / no
+# --remove-label / no uppercase-Labels:-parse assertions below.
+if grep -q 'glab issue view "${num}" --comments' "$GITOPS"; then
+  pass "cmd_issue_get still uses 'glab issue view --comments'"
 else
-  fail "'glab issue view' occurrences: $(grep -c 'glab issue view' "$GITOPS" || true) (want 1, in cmd_issue_get)"
+  fail "cmd_issue_get lost its 'glab issue view --comments' call"
 fi
 if grep -qE 'glab issue update.*--remove-label' "$GITOPS"; then
   fail "git-ops.sh still issues 'glab issue update ... --remove-label'"
 else
   pass "no 'glab issue update ... --remove-label' left in git-ops.sh"
 fi
-if grep -qE 's/\^[Ll]abels' "$GITOPS"; then
-  fail "git-ops.sh still parses a 'Labels:' line"
+# #14 disproved parsing the UPPERCASE `Labels:` line for removal. Lowercase
+# `labels:` reading (raw_issue_labels, #1) is legitimate, so match uppercase only.
+if grep -qE 's/\^Labels' "$GITOPS"; then
+  fail "git-ops.sh still parses an uppercase 'Labels:' line (the disproven removal hack)"
 else
-  pass "no 'Labels:' text-parse left in git-ops.sh"
+  pass "no uppercase 'Labels:' text-parse left in git-ops.sh"
 fi
 if grep -q -- '--unlabel' "$GITOPS"; then
   pass "git-ops.sh uses the official --unlabel flag"
