@@ -320,8 +320,10 @@ check_auth() {
   case "${cli}" in
     gh)   gh auth status >/dev/null 2>&1 ;;
     glab) glab auth status >/dev/null 2>&1 ;;
-    # tea 无 auth status：以 login list 是否列出实例 URL 判断
-    tea)  tea login list 2>/dev/null | grep -qi 'http' ;;
+    # tea 无 auth status：以 login list 是否列出实例 URL 判断。
+    # 不用 grep -q：它匹配即退出，tea 尚未写完时收 SIGPIPE 退 141，配合 set -o pipefail
+    # 会把已授权误判为失败（实测约 14/30）；无 -q 时 grep 读尽 stdin，无此问题。
+    tea)  tea login list 2>/dev/null | grep -i 'http' >/dev/null ;;
     *)    return 1 ;;
   esac
 }
@@ -613,10 +615,12 @@ raw_label_create() {
       ;;
     glab)
       require_cli glab
-      # glab 的 --color 需带 # 前缀
-      if glab label create "${name}" --color "#${color}" --description "${desc}" >/dev/null 2>&1; then
+      # glab 的 --color 需带 # 前缀；新版 glab（>=1.118）要求 --name，旧版接受位置参数，故两者都试
+      if glab label create --name "${name}" --color "#${color}" --description "${desc}" >/dev/null 2>&1 \
+         || glab label create "${name}" --color "#${color}" --description "${desc}" >/dev/null 2>&1; then
         printf 'created'
-      elif glab label edit "${name}" --color "#${color}" --description "${desc}" >/dev/null 2>&1; then
+      elif glab label edit --name "${name}" --color "#${color}" --description "${desc}" >/dev/null 2>&1 \
+         || glab label edit "${name}" --color "#${color}" --description "${desc}" >/dev/null 2>&1; then
         printf 'updated'
       else
         return 1
@@ -625,14 +629,15 @@ raw_label_create() {
     tea)
       require_cli tea
       # tea 0.15.x 支持 --name/--color/--description（--color 必填，缺省会报 invalid color format）；
-      # 无 label edit 能力：create 失败时查列表确认是否已存在，存在视为 updated，否则真失败
-      if tea_cmd labels create --name "${name}" --color "${color}" --description "${desc}" >/dev/null 2>&1; then
-        printf 'created'
-      elif tea_cmd labels list 2>/dev/null \
+      # 无 label edit 能力。⚠️ Gitea 对非 scoped 标签名不查重（实测重复 labels init 会产生同名重复标签），
+      # create 恒成功，幂等性必须靠「先查存在再创建」保证（与 raw_label_add 的查重谓词一致）：
+      if tea_cmd labels list 2>/dev/null \
             | awk -F'│' '{gsub(/^[[:space:]]+|[[:space:]]+$/,"",$4); print $4}' \
             | grep -Fxq -- "${name}"; then
-        log_debug "tea 标签 '${name}' 已存在（tea 无更新能力，跳过）。" >&2
+        log_debug "tea 标签 '${name}' 已存在（Gitea 不查重名，跳过 create）。" >&2
         printf 'updated'
+      elif tea_cmd labels create --name "${name}" --color "${color}" --description "${desc}" >/dev/null 2>&1; then
+        printf 'created'
       else
         return 1
       fi
