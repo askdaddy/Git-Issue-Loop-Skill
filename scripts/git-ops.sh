@@ -717,21 +717,23 @@ EOF_ROWS
 # 获取 Issue 详情：gh/glab/tea 均支持 `issue view <num> --comments`
 cmd_issue_get() {
   local num="$1"
-  # 平台检测失败时必须显式报错退出（命令替换的失败会被 case 吞掉）
   local __plat
   __plat="$(detect_platform)" || exit 1
   case "${__plat}" in
     gh)
       require_cli gh
-      gh issue view "${num}" --comments
+      gh issue view "${num}"
+      gh issue view "${num}" --comments 2>/dev/null || true
       ;;
     glab)
       require_cli glab
-      glab issue view "${num}" --comments
+      glab issue view "${num}"
+      glab issue view "${num}" --comments 2>/dev/null || true
       ;;
     tea)
       require_cli tea
-      tea_cmd issues "${num}" --comments
+      tea_cmd issues "${num}"
+      tea_cmd issues "${num}" --comments 2>/dev/null || true
       ;;
   esac
 }
