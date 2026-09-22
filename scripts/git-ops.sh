@@ -907,6 +907,44 @@ raw_issue_labels() {
   esac
 }
 
+# 大小写不敏感的同族排他清理（两步，兼顾 #14 读独立性与 #19 大小写变体）：
+#   步骤1：无条件移除全族规范形（除 keep）——不依赖读取，即使 raw_issue_labels 失败
+#          也能清掉小写规范标签（保留 #14「移除不依赖文本解析」的健壮性契约）。
+#   步骤2：再读 Issue 现有标签，补移「小写属于本族但本身非规范形」的大小写变体
+#          （如 P0 之于 p0）——根因：GitLab 大小写敏感，deepwiki/历史遗留的大写变体
+#          精确匹配清不掉，与新加小写并存为「P0p0」且每次设置复发。读取失败则本步跳过，
+#          步骤1 已兜底规范形。
+# 用法：raw_label_remove_family_ci <num> <keep> <family-member>...（keep 为空则清全族）
+raw_label_remove_family_ci() {
+  local num="$1" keep="$2"; shift 2
+  local f actual actual_lc f_lc infamily is_canonical current
+  # 步骤1：无条件移除全族规范形（除 keep）
+  for f in "$@"; do
+    [[ "${f}" == "${keep}" ]] && continue
+    raw_label_remove "${num}" "${f}" || true
+  done
+  # 步骤2：补移大小写变体（仅非规范形，避免与步骤1重复调用）
+  current="$(raw_issue_labels "${num}")"
+  while IFS= read -r actual; do
+    [[ -z "${actual}" ]] && continue
+    [[ "${actual}" == "${keep}" ]] && continue
+    is_canonical=0
+    for f in "$@"; do
+      [[ "${actual}" == "${f}" ]] && { is_canonical=1; break; }
+    done
+    [[ "${is_canonical}" -eq 1 ]] && continue
+    actual_lc="$(printf '%s' "${actual}" | tr '[:upper:]' '[:lower:]')"
+    infamily=0
+    for f in "$@"; do
+      f_lc="$(printf '%s' "${f}" | tr '[:upper:]' '[:lower:]')"
+      [[ "${actual_lc}" == "${f_lc}" ]] && { infamily=1; break; }
+    done
+    if [[ "${infamily}" -eq 1 ]]; then
+      raw_label_remove "${num}" "${actual}" || true
+    fi
+  done <<< "${current}"
+}
+
 # 取远端「仓库级」全部标签名（每行一个），供 doctor 校验标签体系是否就绪。
 # 关键区分：CLI/网络失败时 return 1（doctor 据此报「无法获取远端标签」而非「标签缺失」）。
 #   gh   —— `gh label list --json name`（可靠机读）
@@ -964,14 +1002,8 @@ cmd_issue_priority() {
 
   check_permission priority "${priority}"
 
-  # 排他性保证：同族其他优先级标签一律移除（不存在时忽略）
-  local l
-  for l in ${PRIORITY_LABELS}; do
-    if [[ "${l}" == "${priority}" ]]; then
-      continue
-    fi
-    raw_label_remove "${num}" "${l}" || true
-  done
+  # 排他性保证：同族其他优先级标签一律移除（大小写不敏感，含 P0 之类变体）
+  raw_label_remove_family_ci "${num}" "${priority}" ${PRIORITY_LABELS}
   raw_label_add "${num}" "${priority}"
   log_info "优先级已设为 ${priority}（艾森豪威尔矩阵，同族标签已排他清理）。"
 }
@@ -984,13 +1016,8 @@ cmd_issue_status() {
 
   check_permission status "${status}"
 
-  local l
-  for l in ${STATUS_LABELS}; do
-    if [[ "${l}" == "${status}" ]]; then
-      continue
-    fi
-    raw_label_remove "${num}" "${l}" || true
-  done
+  # 排他性保证：同族其他状态标签一律移除（大小写不敏感，含大写变体）
+  raw_label_remove_family_ci "${num}" "${status}" ${STATUS_LABELS}
   raw_label_add "${num}" "${status}"
   log_info "状态已切换为 ${status}（同族状态标签已排他清理）。"
 }
@@ -1006,11 +1033,12 @@ cmd_issue_status() {
 cmd_issue_retry() {
   local num="$1" action="$2"
 
-  # 读当前重试计数 K：扫描该 Issue 标签，命中 riper-retry-<K> 取 K，否则 0
-  local cur=0 lab
+  # 读当前重试计数 K：扫描该 Issue 标签，命中 riper-retry-<K>（大小写不敏感）取 K，否则 0
+  local cur=0 lab lab_lc
   while IFS= read -r lab; do
-    case "${lab}" in
-      riper-retry-[1-9]) cur="${lab#riper-retry-}" ;;
+    lab_lc="$(printf '%s' "${lab}" | tr '[:upper:]' '[:lower:]')"
+    case "${lab_lc}" in
+      riper-retry-[1-9]) cur="${lab_lc#riper-retry-}" ;;
     esac
   done < <(raw_issue_labels "${num}")
 
@@ -1021,10 +1049,7 @@ cmd_issue_retry() {
       ;;
     reset)
       check_permission retry-read
-      local l
-      for l in ${RETRY_LABELS}; do
-        raw_label_remove "${num}" "${l}" || true
-      done
+      raw_label_remove_family_ci "${num}" "" ${RETRY_LABELS}
       log_info "重试计数已清零（移除全部 riper-retry-* 标签）。"
       ;;
     incr)
@@ -1033,12 +1058,9 @@ cmd_issue_retry() {
         log_error "已达重试上限 3 次（当前 riper-retry-${cur}），应转 riper-blocked 等待人工介入，不再自增。"
         exit 1
       fi
-      local next=$((cur + 1)) l
-      # 排他：先移除同族其他 retry 标签，再写入 next
-      for l in ${RETRY_LABELS}; do
-        [[ "${l}" == "riper-retry-${next}" ]] && continue
-        raw_label_remove "${num}" "${l}" || true
-      done
+      local next=$((cur + 1))
+      # 排他：先移除同族其他 retry 标签（大小写不敏感），再写入 next
+      raw_label_remove_family_ci "${num}" "riper-retry-${next}" ${RETRY_LABELS}
       raw_label_add "${num}" "riper-retry-${next}"
       log_info "重试计数已登记为 riper-retry-${next}（同族已排他清理）。"
       ;;

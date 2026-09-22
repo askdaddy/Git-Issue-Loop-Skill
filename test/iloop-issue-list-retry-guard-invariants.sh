@@ -369,6 +369,31 @@ grep -Fxq 'riper-review' "$GH_LABELDIR/1" && pass "status switched to riper-revi
 grep -Fxq 'riper-execute' "$GH_LABELDIR/1" && fail "old status riper-execute not cleaned" || pass "old status cleaned (exclusive)"
 
 #############################################################################
+echo "=== (d-2) case-insensitive family cleanup: uppercase variants removed (#19) ==="
+# gh stub 的 add/remove 用 grep -Fx（大小写敏感），模拟 GitLab：P0 与 p0 可并存。
+# 设置优先级时必须清掉大写变体 P0，否则复发为「P0p0」。
+printf 'P0\nRIPER-EXECUTE\n' > "$GH_LABELDIR/1"
+probe "$GH_REPO" "$WORK/ghbin" --role planner issue priority 1 p1
+grep -Fxq 'p1' "$GH_LABELDIR/1" && pass "priority p1 applied" || fail "p1 not applied"
+grep -Fxq 'P0' "$GH_LABELDIR/1" && fail "uppercase P0 survived priority cleanup (P0p0 bug)" || pass "uppercase P0 removed (case-insensitive)"
+grep -Fxq 'p0' "$GH_LABELDIR/1" && fail "lowercase p0 present unexpectedly" || pass "no lowercase p0 duplicate"
+grep -Fxq 'RIPER-EXECUTE' "$GH_LABELDIR/1" && pass "cross-family: status variant untouched by priority cmd" || fail "priority cmd wrongly removed status label"
+
+# 状态切换同样清大写变体 RIPER-EXECUTE，且不动跨族 p1
+probe "$GH_REPO" "$WORK/ghbin" --role developer issue status 1 riper-review
+grep -Fxq 'riper-review' "$GH_LABELDIR/1" && pass "status riper-review applied" || fail "riper-review not applied"
+grep -Fxq 'RIPER-EXECUTE' "$GH_LABELDIR/1" && fail "uppercase RIPER-EXECUTE survived status cleanup" || pass "uppercase status variant removed (case-insensitive)"
+grep -Fxq 'p1' "$GH_LABELDIR/1" && pass "cross-family: p1 intact after status switch" || fail "status cmd wrongly removed priority p1"
+
+# retry get/incr 对大写变体大小写不敏感：RIPER-RETRY-2 应读成 2，incr 到 3 而非重置为 1
+printf 'RIPER-RETRY-2\n' > "$GH_LABELDIR/1"
+probe "$GH_REPO" "$WORK/ghbin" --role reviewer issue retry 1 get
+[[ "$OUT" == "2" ]] && pass "retry get reads uppercase RIPER-RETRY-2 -> 2" || fail "retry get='$OUT' (want 2, case-insensitive)"
+probe "$GH_REPO" "$WORK/ghbin" --role reviewer issue retry 1 incr
+grep -Fxq 'riper-retry-3' "$GH_LABELDIR/1" && pass "retry incr from uppercase variant -> riper-retry-3 (no reset)" || fail "expected riper-retry-3 after incr"
+grep -Fxq 'RIPER-RETRY-2' "$GH_LABELDIR/1" && fail "uppercase RIPER-RETRY-2 survived incr cleanup" || pass "uppercase retry variant removed (case-insensitive)"
+
+#############################################################################
 echo "=== (c-3) guard writable-area matrix (throwaway repo) ==="
 GREPO="$(make_repo guardrepo https://github.com/o/r.git)"
 mkdir -p "$GREPO/scripts" "$GREPO/docs/issues/1" "$GREPO/test"
