@@ -908,7 +908,7 @@ raw_issue_labels() {
 # 取远端「仓库级」全部标签名（每行一个），供 doctor 校验标签体系是否就绪。
 # 关键区分：CLI/网络失败时 return 1（doctor 据此报「无法获取远端标签」而非「标签缺失」）。
 #   gh   —— `gh label list --json name`（可靠机读）
-#   glab —— `glab label list` 文本，取每行首列（QA stub 须以标签名为首 token）
+#   glab —— `glab label list --output json`（可靠机读）；旧版 fallback 文本首列
 #   tea  —— `tea labels list` 盒式表，名字在第 4 个 │ 字段（与 raw_label_create 同解析）
 raw_label_names() {
   local __plat out
@@ -920,8 +920,13 @@ raw_label_names() {
       ;;
     glab)
       require_cli glab
-      if ! out="$(glab label list 2>/dev/null)"; then return 1; fi
-      out="$(printf '%s\n' "${out}" | awk 'NF {print $1}')"
+      # glab >=1.7 支持 --output json；1.118 起文本首列变为 ID 而非名称
+      if out="$(glab label list --output json 2>/dev/null)"; then
+        out="$(printf '%s\n' "${out}" | grep -o '"name":"[^"]*"' | sed 's/^"name":"//;s/"$//')"
+      else
+        if ! out="$(glab label list 2>/dev/null)"; then return 1; fi
+        out="$(printf '%s\n' "${out}" | awk 'NF {print $1}')"
+      fi
       ;;
     tea)
       require_cli tea
