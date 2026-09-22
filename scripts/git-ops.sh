@@ -126,7 +126,7 @@ detect_by_registry() {
   # tea：login list 的 URL / SSH HOST 列含该 host 即视为已登记
   # lazy-ladder: fixed-string 子串匹配，多个含相同子串的 tea 登录取首个命中；
   #              需精确到 host+端口唯一时再改为按列解析比对。
-  if command -v tea >/dev/null 2>&1 && tea login list 2>/dev/null | grep -Fq -- "${host}"; then
+  if command -v tea >/dev/null 2>&1 && tea login list 2>/dev/null | grep -F -- "${host}" >/dev/null; then
     echo "tea"
     return 0
   fi
