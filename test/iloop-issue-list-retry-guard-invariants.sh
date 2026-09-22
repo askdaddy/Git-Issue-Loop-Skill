@@ -80,8 +80,8 @@ STUB
 chmod +x "$WORK/ghbin/gh"
 
 # ===========================================================================
-# stub: glab — text output; raw_issue_labels parses lowercase `labels:` line.
-#   $GLAB_LABELS  repo-level names (first token per line) for `label list`
+# stub: glab — text issue output plus JSON repository-label output.
+#   $GLAB_LABELS  repo-level names for `label list --output json`
 #   $GLAB_LABELDIR/<n>  per-issue labels (comma file), mutable
 #   GLAB_LABELS_FAIL=1  makes `label list` exit 1
 # ===========================================================================
@@ -92,7 +92,19 @@ echo "$*" >> "${STUB_LOG:-/dev/null}"
 [[ "${1:-}" == "auth" ]] && exit 0
 if [[ "${1:-} ${2:-}" == "label list" ]]; then
   [[ "${GLAB_LABELS_FAIL:-0}" == "1" ]] && { echo "net down" >&2; exit 1; }
-  cat "${GLAB_LABELS:-/dev/null}" 2>/dev/null
+  if [[ " $* " == *" --output json "* ]]; then
+    first=1
+    printf '['
+    while IFS= read -r name; do
+      [[ -z "$name" ]] && continue
+      [[ "$first" -eq 0 ]] && printf ','
+      printf '{"name":"%s"}' "$name"
+      first=0
+    done < "${GLAB_LABELS:-/dev/null}"
+    printf ']\n'
+  else
+    cat "${GLAB_LABELS:-/dev/null}" 2>/dev/null
+  fi
   exit 0
 fi
 if [[ "${1:-} ${2:-}" == "issue list" ]]; then

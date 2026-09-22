@@ -2,8 +2,8 @@
 # Black-box contract checks for Issue #15 (git-ops.sh tea/glab CLI compatibility).
 # Stubs tea 0.15.x and glab (1.118 "--name required" + an older positional-only
 # variant), drives git-ops.sh inside throwaway repos routed by HOSTNAME HEURISTIC
-# (*gitea* -> tea, gitlab.com -> glab) so detect_platform never touches the
-# unfixed registry path (line 125, out of scope per spec A2).
+# (*gitea* -> tea, gitlab.com -> glab) so these #15 scenarios do not depend on
+# the registry path covered separately by the #16 regression test.
 #
 # Verifies the three frozen acceptance criteria from plan.md:
 #   step 1: tea check_auth never false-negatives via grep -q SIGPIPE + pipefail
@@ -232,11 +232,11 @@ unset TEA_STATE
 #############################################################################
 echo "=== scope & hygiene ==="
 
-# Out-of-scope guard: detect_platform tea registry path (line 125) must be UNCHANGED.
-if grep -q 'tea login list 2>/dev/null | grep -Fq -- "${host}"' "$GITOPS"; then
-  pass "detect_platform registry probe (spec A2) left untouched — no scope creep"
+# Cross-issue hygiene: #16 requires the registry probe to consume all input.
+if grep -q 'tea login list 2>/dev/null | grep -F -- "${host}" >/dev/null' "$GITOPS"; then
+  pass "detect_platform registry probe uses the #16 read-all form"
 else
-  fail "detect_platform line 125 was modified (out of #15 scope)"
+  fail "detect_platform registry probe is not using the #16 read-all form"
 fi
 
 # Syntax + committed.
