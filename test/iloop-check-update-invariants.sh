@@ -105,7 +105,7 @@ assert_grep "$INSTALL" '启动时的版本检查|check-update' "INSTALL document
 assert_grep "$INSTALL" '不得自行切换|询问是否' "INSTALL says the user decides"
 assert_grep "${ROOT}/README_CN.md" '稳定 tag|更新' "Chinese README mentions update check"
 assert_grep "${ROOT}/README.md" 'stable git tag|ask before upgrading' "English README mentions update check"
-assert_grep "$MANIFEST" '"version": "0.6.2"' "skill.version is 0.6.2"
+assert_grep "$MANIFEST" '"version": "0.6.3"' "skill.version is 0.6.3"
 assert_grep "$MANIFEST" 'scripts/check-update.sh' "requiredPaths includes check-update.sh"
 
 if git -C "$ROOT" diff HEAD -- scripts/git-ops.sh | grep -q .; then
