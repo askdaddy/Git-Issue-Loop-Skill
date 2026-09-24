@@ -3,7 +3,7 @@
 [English](README.md)
 
 `iloop` 是一个面向 Agent 的 Issue 驱动 RIPER 研发闭环 Skill：
-**研究（Research）→ 创新（Innovation）→ 计划（Plan）→ 执行（Execute）→ 审查（Review）**。
+**目标登记（Goal）→ 研究（Research）→ 创新（Innovation）→ 计划（Plan）→ 执行（Execute）→ 审查（Review）**。
 给一句目标也可以：Planner 会先把目标整理成草稿、经你确认后登记为 Issue，再进入闭环（目标直入）。
 它以 Git Issue 的正文、评论和标签为唯一事实来源；本地 Markdown 文档（`docs/issues/<N>/`）仅在远程 Issue 不可用时作为降级 fallback，不做双写冗余。
 
@@ -11,14 +11,18 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
 
 ## 提供的能力
 
-- `/iloop` 入口，可执行完整 RIPER 闭环、仅计划、验收或环境自检。
+- `/iloop` 入口，可执行完整 RIPER 闭环、仅计划、验收、环境自检，或 `help`（输出用法速览 + 本地已安装版本）。
+- 裸 `/iloop` 自动挑选：只读扫描 open Issue，按 `p0`→`p3`、同优先级编号升序排序，跳过阻塞 / 重试超限 / 已验收未关闭者，呈报候选清单、选择理由与跳过项；**等用户确认后**才加载角色，且每次调用只处理 1 个 Issue。
 - 启动分发：编号入口先按 RIPER 状态（并对产物）分发角色，0 帧切入当前阶段，不总是从研究起手。
 - 启动时对照官方仓库最高稳定 tag 检查 Skill 是否有更新；有则询问是否升级，不自动切换。
 - 目标直入：给 `/iloop` 一句目标而非 Issue 编号，Planner 会整理草稿、经确认后创建 Issue 并设优先级，再经分发进入闭环（新建 Issue 会落入研究）。
 - 严格角色分工：Planner 负责规范和计划，Developer 按已批准计划实施，Reviewer 进行黑盒验收。
 - 规格驱动交付：计划是冻结契约；任何计划变更都必须显式退回计划阶段。
-- 优先级（`p0`–`p3`）和 RIPER 状态均使用互斥的 Issue 标签族表达。
-- `scripts/git-ops.sh` 根据 `git remote` 自动识别平台、调用官方 CLI，并校验角色权限。
+- 最少代码梯子（`references/lazy-ladder.md`）约束 HOW：在验收范围内取最短 diff；合法改道须留一行 `skipped:` 评论。
+- 三个互斥的 Issue 标签族——优先级（`p0`–`p3`）、RIPER 状态、重试计数（`riper-retry-1`–`3`）——合计 14 个内置标签，由 `labels init` 幂等创建。
+- T0 硬边界：Planner 与 Reviewer 禁改业务代码；提交前 `guard <role>` 会用 `git status` 比对角色可写区域，越界即 `exit 1`。
+- `scripts/git-ops.sh` 根据 `git remote` 自动识别平台、调用官方 CLI、按角色硬性校验 Issue 操作权限，且拒绝改走 REST API 或代填凭据。
+- `test/` 下 12 个黑盒不变量测试套件，以 stub `gh` / `glab` / `tea` 在一次性仓库中驱动。
 
 ## 安装最新稳定版
 
@@ -42,7 +46,7 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
    ```
 
 3. 若自检提示缺少 CLI 或未授权，请由使用者自行完成安装和授权；不要将 token 写入仓库，也不要要求 Agent 代填凭据。
-4. 输入 `/iloop`，或让 Agent 对指定 Issue 进行计划或验收。
+4. 输入 `/iloop`：不带参数时会自动挑选最该处理的 1 个 open Issue，并先呈报候选清单与理由等你确认；也可以直接给 Issue 编号、给一句目标，或让 Agent 只排计划、只做验收。
 
 首次在一个仓库中使用时，可初始化标签体系：
 
@@ -66,9 +70,12 @@ SKILL.md                 Skill 契约与 RIPER 工作流
 INSTALL.md               Agent 管理的 Git 安装协议
 skill-manifest.json      机器可读的安装契约
 scripts/git-ops.sh       平台路由、Issue 操作与安全约束
+scripts/check-update.sh  对照远端最高稳定 tag 检查已安装 Skill 是否有更新
 roles/                   Planner、Developer、Reviewer 的角色说明
 templates/               spec、design、plan、verify-report 模板
-references/              CLI 配置说明
+references/              CLI 配置说明与最少代码梯子
+test/                    黑盒不变量测试套件（stub gh / glab / tea）
+docs/issues/<N>/         降级落盘的阶段文档，仅当远程 Issue 平台不可用时写入
 ```
 
 ## 稳定版发布约定

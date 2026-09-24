@@ -20,17 +20,11 @@
 # 用法：
 #   ./git-ops.sh --role <planner|developer|reviewer> <子命令> ...
 #
-#   ./git-ops.sh issue get <num>
-#   ./git-ops.sh issue comment <num> "<content>"
-#   ./git-ops.sh issue create "<title>" "<body>"
-#   ./git-ops.sh issue close <num>
-#   ./git-ops.sh issue reopen <num>
-#   ./git-ops.sh issue priority <num> <p0|p1|p2|p3>     # 排他：同时只保留一个优先级
-#   ./git-ops.sh issue status <num> <riper-*>           # 排他：同时只保留一个 RIPER 状态
-#   ./git-ops.sh issue label <num> add <label>          # 自由标签（上下文召回用）
-#   ./git-ops.sh issue label <num> remove <label>
-#   ./git-ops.sh platform                               # 仅打印检测到的平台
-#   ./git-ops.sh doctor                                 # 自检：CLI 是否安装 + 是否已授权
+#   完整子命令清单以 usage() 为唯一事实来源（不带参数运行 ./git-ops.sh 即打印）：
+#   issue list|get|comment|create|close|reopen|priority|status|retry|label、
+#   labels init、guard <role>、platform、doctor。
+#   排他语义：priority / status / retry 三族各自同时只保留一个标签，
+#   由脚本在写入时自动清理同族其他标签。
 #
 # CLI 优先原则：
 #   Issue 操作一律优先使用本地官方 CLI（GitHub->gh，GitLab->glab，Gitea/Forgejo->tea）。
@@ -38,14 +32,17 @@
 #   而是输出对应平台的安装 + 授权指南并以 exit 1 中止，由 Agent 转交给用户处理。
 #   完整指南见 references/cli-setup.md。
 #
-# 标签族（互斥，由脚本强制排他）：
+# 标签族（前三个互斥，由脚本强制排他；合计 14 个内置标签 = 4 + 7 + 3）：
 #   - 优先级 p0~p3，按艾森豪威尔矩阵定义：
 #       p0 = 重要且紧急    p1 = 重要不紧急
 #       p2 = 紧急不重要    p3 = 不重要不紧急
 #     优先级只能用平台 label 能力表达，禁止写进 Issue 标题。
 #   - 状态 riper-research / riper-innovation / riper-plan / riper-execute /
 #     riper-review / riper-verified / riper-blocked（描述 RIPER 各阶段，同时只能一个）
-#   - 其他标签由 Agent 自定义，便于上下文召回（如 module/xxx、type/bug）
+#   - 重试计数 riper-retry-1 / -2 / -3（QA 审查 FAIL 退回计划的轮次，达 3 即上限须转
+#     riper-blocked）；incr 仅 reviewer 可用，get/reset 不限角色。
+#   - 自由标签（第四类，**不排他**）由 Agent 自定义，便于上下文召回（如 module/xxx、
+#     type/bug），经 issue label add|remove 操作，不计入上述 14 个内置标签。
 #
 # 权限硬校验（--role，也可用环境变量 GIT_OPS_ROLE 指定）：
 #   - close / reopen 仅 planner / reviewer 可用，Developer 调用直接拒绝；
@@ -54,7 +51,9 @@
 #       planner   riper-research / riper-innovation / riper-plan
 #       developer riper-execute / riper-review / riper-blocked
 #       reviewer  riper-plan（FAIL 退回） / riper-verified / riper-blocked
-#   - label add/remove 不限角色，但禁止操作上述两个互斥标签族（须用专用子命令）；
+#   - retry incr 仅 reviewer 可用（get / reset 不限角色）；
+#   - label add/remove 不限角色，但禁止操作上述三个互斥标签族（优先级 / 状态 / 重试，
+#     须用专用子命令）；
 #   - 未指定 --role 时仅打印警告并放行（便于人工直接调用）。
 # ============================================================================
 
@@ -100,7 +99,8 @@ Commands:
   git-ops.sh labels init                            初始化标签体系（4 优先级 + 7 状态 + 3 重试，幂等）
   git-ops.sh guard <role>                          可写区域越界自检（提交前必跑；role=planner|developer|reviewer）
   git-ops.sh platform                               打印检测到的托管平台
-  git-ops.sh doctor                                 自检：CLI 安装与授权状态（缺失时输出指南）
+  git-ops.sh doctor                                 自检：运行环境 → CLI 路由 → 安装 → 授权 → 14 个内置标签就绪
+                                                    （任一项不就绪即输出指南并 exit 1）
 EOF
   exit 1
 }
@@ -379,12 +379,12 @@ ROLE="${GIT_OPS_ROLE:-}"
 PRIORITY_LABELS="p0 p1 p2 p3"
 # 状态：RIPER 各阶段 + 终态
 STATUS_LABELS="riper-research riper-innovation riper-plan riper-execute riper-review riper-verified riper-blocked"
-# 重试计数：QA 审查 FAIL 退回计划的次数（第四族，同样排他；达 3 次后须转 riper-blocked）
+# 重试计数：QA 审查 FAIL 退回计划的次数（第三族，同样排他；达 3 次后须转 riper-blocked）
 # 存于 Issue 标签而非本地文件，以保证跨会话 / 跨机器 / 跨 agent 可见（Issue 为唯一事实来源）
 RETRY_LABELS="riper-retry-1 riper-retry-2 riper-retry-3"
 
 # 标签元数据：输出「颜色 描述」，颜色为 6 位 hex（不带 #），供 labels init 建标签时使用。
-# 覆盖四族全部 14 个标签（4 优先级 + 7 状态 + 3 重试）；未知标签返回非 0。
+# 覆盖三个互斥族全部 14 个标签（4 优先级 + 7 状态 + 3 重试）；未知标签返回非 0。
 label_meta() {
   case "$1" in
     p0) echo "B60205 艾森豪威尔：重要且紧急 — 立即处理，阻塞发布/线上事故" ;;
@@ -1152,7 +1152,7 @@ cmd_issue_reopen() {
 }
 
 # ---------------------------------------------------------------------------
-# 标签体系初始化：幂等创建/更新四族全部 14 个标签
+# 标签体系初始化：幂等创建/更新三个互斥族全部 14 个标签
 # 新仓库首次使用本 Skill 前必须执行；否则 issue priority / status 会因
 # 平台侧标签不存在而报 'p0' not found 并 exit 1（bootstrap 死锁）。
 # ---------------------------------------------------------------------------
