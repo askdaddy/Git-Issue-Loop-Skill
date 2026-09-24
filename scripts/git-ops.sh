@@ -875,35 +875,59 @@ raw_label_remove() {
   esac
 }
 
-# 读取某 Issue 的标签名（每行一个），机读优先：
-#   gh 用 `--json labels`（规避 #17：`--comments` 会吞掉头部导致标签读不到）；
-#   glab/tea 解析视图输出中的小写 `labels:` 行（**禁用**大写 `Labels:` sed —— #14 已证伪）。
-# 取不到标签时输出空且 return 0（上层据此判定「无 retry 标签 → K=0」）。
+# 读取某 Issue 的标签名（每行一个，保留原始大小写）。机读优先；旧 CLI 才降级解析文本。
+# 成功且无标签：无输出、return 0。CLI 失败或输出无法确认 labels 字段：return 1。
 raw_issue_labels() {
   local num="$1"
-  local __plat
+  local __plat out
   __plat="$(detect_platform)" || exit 1
   case "${__plat}" in
     gh)
       require_cli gh
-      gh issue view "${num}" --json labels --jq '.labels[].name' 2>/dev/null || true
+      gh issue view "${num}" --json labels --jq '.labels[].name' 2>/dev/null
       ;;
     glab)
       require_cli glab
-      glab issue view "${num}" 2>/dev/null \
-        | sed -n 's/^labels:[[:space:]]*\(.*\)$/\1/p' \
+      # 新版 glab 用内置 jq 输出 sentinel + 标签，sentinel 使「空标签」可与失败区分。
+      if out="$(glab issue view "${num}" --output json \
+          --jq '"__ILOOP_LABELS_OK__", (.labels[] | if type == "string" then . else .name end)' \
+          2>/dev/null)" && [[ "${out%%$'\n'*}" == "__ILOOP_LABELS_OK__" ]]; then
+        printf '%s\n' "${out}" | sed '1d' | grep -v '^$' || true
+        return 0
+      fi
+      # 旧版降级：只有明确看见 labels 字段才把空结果视为成功。
+      if ! out="$(glab issue view "${num}" 2>/dev/null)" \
+         || ! printf '%s\n' "${out}" | grep -Eq '^[Ll]abels:[[:space:]]*'; then
+        return 1
+      fi
+      printf '%s\n' "${out}" \
+        | sed -n 's/^[Ll]abels:[[:space:]]*\(.*\)$/\1/p' \
         | tr ',' '\n' \
         | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
         | grep -v '^$' || true
       ;;
     tea)
       require_cli tea
-      tea_cmd issues "${num}" 2>/dev/null \
-        | sed -n 's/^labels:[[:space:]]*\(.*\)$/\1/p' \
+      # tea 0.16+ 可按字段输出 JSON；labels 数组为空也是可确认的成功结果。
+      if out="$(tea_cmd issues "${num}" --output json --fields labels 2>/dev/null)" \
+         && printf '%s\n' "${out}" | grep -Eq '"labels"[[:space:]]*:'; then
+        printf '%s\n' "${out}" \
+          | grep -Eo '"name"[[:space:]]*:[[:space:]]*"[^"]*"' \
+          | sed 's/^"name"[[:space:]]*:[[:space:]]*"//; s/"$//' || true
+        return 0
+      fi
+      # 旧版降级与 glab 一致：文本必须显式包含 labels 字段。
+      if ! out="$(tea_cmd issues "${num}" 2>/dev/null)" \
+         || ! printf '%s\n' "${out}" | grep -Eq '^[Ll]abels:[[:space:]]*'; then
+        return 1
+      fi
+      printf '%s\n' "${out}" \
+        | sed -n 's/^[Ll]abels:[[:space:]]*\(.*\)$/\1/p' \
         | tr ',' '\n' \
         | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
         | grep -v '^$' || true
       ;;
+    *) return 1 ;;
   esac
 }
 
@@ -924,7 +948,10 @@ raw_label_remove_family_ci() {
     raw_label_remove "${num}" "${f}" || true
   done
   # 步骤2：补移大小写变体（仅非规范形，避免与步骤1重复调用）
-  current="$(raw_issue_labels "${num}")"
+  if ! current="$(raw_issue_labels "${num}")"; then
+    log_error "无法读取 Issue #${num} 的实际标签，不能保证同族标签排他；已停止添加目标标签。"
+    return 1
+  fi
   while IFS= read -r actual; do
     [[ -z "${actual}" ]] && continue
     [[ "${actual}" == "${keep}" ]] && continue
@@ -1003,7 +1030,7 @@ cmd_issue_priority() {
   check_permission priority "${priority}"
 
   # 排他性保证：同族其他优先级标签一律移除（大小写不敏感，含 P0 之类变体）
-  raw_label_remove_family_ci "${num}" "${priority}" ${PRIORITY_LABELS}
+  raw_label_remove_family_ci "${num}" "${priority}" ${PRIORITY_LABELS} || return 1
   raw_label_add "${num}" "${priority}"
   log_info "优先级已设为 ${priority}（艾森豪威尔矩阵，同族标签已排他清理）。"
 }
@@ -1017,7 +1044,7 @@ cmd_issue_status() {
   check_permission status "${status}"
 
   # 排他性保证：同族其他状态标签一律移除（大小写不敏感，含大写变体）
-  raw_label_remove_family_ci "${num}" "${status}" ${STATUS_LABELS}
+  raw_label_remove_family_ci "${num}" "${status}" ${STATUS_LABELS} || return 1
   raw_label_add "${num}" "${status}"
   log_info "状态已切换为 ${status}（同族状态标签已排他清理）。"
 }
@@ -1034,13 +1061,18 @@ cmd_issue_retry() {
   local num="$1" action="$2"
 
   # 读当前重试计数 K：扫描该 Issue 标签，命中 riper-retry-<K>（大小写不敏感）取 K，否则 0
-  local cur=0 lab lab_lc
+  local cur=0 lab lab_lc current
+  if ! current="$(raw_issue_labels "${num}")"; then
+    log_error "无法读取 Issue #${num} 的实际标签，不能确定当前重试计数。"
+    return 1
+  fi
   while IFS= read -r lab; do
+    [[ -z "${lab}" ]] && continue
     lab_lc="$(printf '%s' "${lab}" | tr '[:upper:]' '[:lower:]')"
     case "${lab_lc}" in
       riper-retry-[1-9]) cur="${lab_lc#riper-retry-}" ;;
     esac
-  done < <(raw_issue_labels "${num}")
+  done <<< "${current}"
 
   case "${action}" in
     get)
@@ -1049,7 +1081,7 @@ cmd_issue_retry() {
       ;;
     reset)
       check_permission retry-read
-      raw_label_remove_family_ci "${num}" "" ${RETRY_LABELS}
+      raw_label_remove_family_ci "${num}" "" ${RETRY_LABELS} || return 1
       log_info "重试计数已清零（移除全部 riper-retry-* 标签）。"
       ;;
     incr)
@@ -1060,7 +1092,7 @@ cmd_issue_retry() {
       fi
       local next=$((cur + 1))
       # 排他：先移除同族其他 retry 标签（大小写不敏感），再写入 next
-      raw_label_remove_family_ci "${num}" "riper-retry-${next}" ${RETRY_LABELS}
+      raw_label_remove_family_ci "${num}" "riper-retry-${next}" ${RETRY_LABELS} || return 1
       raw_label_add "${num}" "riper-retry-${next}"
       log_info "重试计数已登记为 riper-retry-${next}（同族已排他清理）。"
       ;;
