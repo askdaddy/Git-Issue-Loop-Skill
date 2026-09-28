@@ -80,6 +80,20 @@ echo "\$*" >> "\${STUB_LOG:-/dev/null}"
 if [[ "\${1:-}" == "auth" ]]; then exit 0; fi
 if [[ "\${1:-}" != "label" ]]; then exit 0; fi
 sub="\${2:-}"
+if [[ "\$sub" == "list" ]]; then
+  st="\${GLAB_STATE:-/dev/null}"
+  if [[ " \$* " == *" --output json "* ]]; then
+    [[ "\${GLAB_MODE:-new}" == "old" ]] && exit 1
+    first=1; printf '['
+    while IFS= read -r name; do
+      [[ -z "\$name" ]] && continue
+      [[ \$first -eq 0 ]] && printf ','
+      printf '{"name":"%s"}' "\$name"; first=0
+    done < "\$st"
+    printf ']\n'; exit 0
+  fi
+  cat "\$st"; exit 0
+fi
 prev=""; nm=""; has_name=0
 for a in "\$@"; do [[ "\$prev" == "--name" ]] && { nm="\$a"; has_name=1; }; prev="\$a"; done
 pos="\${3:-}"
