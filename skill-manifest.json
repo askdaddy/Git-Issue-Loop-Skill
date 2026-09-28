@@ -2,10 +2,11 @@
   "schemaVersion": 1,
   "skill": {
     "name": "iloop",
-    "version": "0.6.4",
+    "version": "0.6.5",
     "entry": "SKILL.md",
     "requiredPaths": [
       "SKILL.md",
+      "CHANGELOG.md",
       "scripts/git-ops.sh",
       "roles/planner.md",
       "roles/developer.md",

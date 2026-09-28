@@ -38,13 +38,16 @@ CLIs: `gh`, `glab`, and `tea`.
   one-line `skipped:` comment for any legitimate detour.
 - Three exclusive Issue-label families — priority (`p0`–`p3`), RIPER status, and
   retry count (`riper-retry-1`–`3`) — totalling 14 built-in labels that
-  `labels init` creates idempotently.
+  `labels init` creates idempotently. It also canonicalizes repository-level
+  priority variants such as `P0` without losing their open or closed Issue
+  associations; migration failures stop before the repository variant is
+  deleted.
 - Hard T0 boundaries: the Planner and Reviewer may not touch business code, and
   `guard <role>` verifies the writable area against `git status` before a commit.
 - `scripts/git-ops.sh`, which detects the hosting platform from `git remote`,
   routes to the official CLI, enforces per-role Issue permissions, and refuses to
   fall back to REST APIs or hand-entered credentials.
-- 12 black-box invariant suites under `test/` that drive stub `gh` / `glab` /
+- 13 black-box invariant suites under `test/` that drive stub `gh` / `glab` /
   `tea` binaries in throwaway repositories.
 
 ## Install the latest stable release
@@ -119,6 +122,7 @@ roles/                   Planner, Developer, and Reviewer role instructions
 templates/               Spec, design, plan, and verification-report templates
 references/              CLI setup guidance and the minimum-code ladder
 test/                    Black-box invariant suites driving stub gh / glab / tea
+CHANGELOG.md             Stable-release change history
 docs/issues/<N>/         Degraded-fallback stage documents, written only when the
                          remote Issue platform is unavailable
 ```
@@ -132,4 +136,5 @@ the default installer. Changes to the install protocol (`INSTALL.md` or
 `skill-manifest.json` `installation`) must ship in a new stable `vX.Y.Z` tag.
 
 For the normative workflow rules, see [SKILL.md](SKILL.md). For the Chinese
-version of this introduction, see [README_CN.md](README_CN.md).
+version of this introduction, see [README_CN.md](README_CN.md). Stable release
+history is recorded in [CHANGELOG.md](CHANGELOG.md).

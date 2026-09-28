@@ -19,10 +19,10 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
 - 严格角色分工：Planner 负责规范和计划，Developer 按已批准计划实施，Reviewer 进行黑盒验收。
 - 规格驱动交付：计划是冻结契约；任何计划变更都必须显式退回计划阶段。
 - 最少代码梯子（`references/lazy-ladder.md`）约束 HOW：在验收范围内取最短 diff；合法改道须留一行 `skipped:` 评论。
-- 三个互斥的 Issue 标签族——优先级（`p0`–`p3`）、RIPER 状态、重试计数（`riper-retry-1`–`3`）——合计 14 个内置标签，由 `labels init` 幂等创建。
+- 三个互斥的 Issue 标签族——优先级（`p0`–`p3`）、RIPER 状态、重试计数（`riper-retry-1`–`3`）——合计 14 个内置标签，由 `labels init` 幂等创建；它还会安全迁移仓库级 `P0` 等历史大小写变体所关联的 open/closed Issue，验证成功后再删除变体，失败时保留变体并停止。
 - T0 硬边界：Planner 与 Reviewer 禁改业务代码；提交前 `guard <role>` 会用 `git status` 比对角色可写区域，越界即 `exit 1`。
 - `scripts/git-ops.sh` 根据 `git remote` 自动识别平台、调用官方 CLI、按角色硬性校验 Issue 操作权限，且拒绝改走 REST API 或代填凭据。
-- `test/` 下 12 个黑盒不变量测试套件，以 stub `gh` / `glab` / `tea` 在一次性仓库中驱动。
+- `test/` 下 13 个黑盒不变量测试套件，以 stub `gh` / `glab` / `tea` 在一次性仓库中驱动。
 
 ## 安装最新稳定版
 
@@ -75,6 +75,7 @@ roles/                   Planner、Developer、Reviewer 的角色说明
 templates/               spec、design、plan、verify-report 模板
 references/              CLI 配置说明与最少代码梯子
 test/                    黑盒不变量测试套件（stub gh / glab / tea）
+CHANGELOG.md             稳定版本变更记录
 docs/issues/<N>/         降级落盘的阶段文档，仅当远程 Issue 平台不可用时写入
 ```
 
@@ -82,4 +83,4 @@ docs/issues/<N>/         降级落盘的阶段文档，仅当远程 Issue 平台
 
 `main` 是开发分支。每个稳定版都必须创建新的、不可复用的 `vX.Y.Z` tag，并应发布对应的 GitHub Release 记录变更说明。预发布版本必须使用类似 `-beta.1` 的 SemVer 后缀，默认安装器会自动跳过。改动安装协议（`INSTALL.md` 或 `skill-manifest.json` 的 `installation`）必须随新的稳定 `vX.Y.Z` tag 发布。
 
-规范性工作流规则见 [SKILL.md](SKILL.md)。英文版项目介绍见 [README.md](README.md)。
+规范性工作流规则见 [SKILL.md](SKILL.md)。英文版项目介绍见 [README.md](README.md)，稳定版本历史见 [CHANGELOG.md](CHANGELOG.md)。
