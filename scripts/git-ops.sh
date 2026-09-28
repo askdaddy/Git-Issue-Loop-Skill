@@ -1005,6 +1005,150 @@ raw_label_names() {
   printf '%s\n' "${out}"
 }
 
+# 按仓库标签筛选全部 Issue（每行一个编号，包含 open / closed）。
+# 空结果成功；CLI 不支持可靠机读或请求失败时 return 1。
+raw_issue_numbers_by_label() {
+  local label="$1"
+  local __plat out page
+  __plat="$(detect_platform)" || return 1
+  case "${__plat}" in
+    gh)
+      require_cli gh
+      gh issue list --state all --label "${label}" --limit 1000 \
+        --json number --jq '.[].number' 2>/dev/null
+      ;;
+    glab)
+      require_cli glab
+      page=1
+      while :; do
+        if ! out="$(glab issue list --all --label "${label}" --page "${page}" --per-page 100 \
+            --output json --jq '.[].iid' 2>/dev/null)"; then
+          return 1
+        fi
+        [[ -z "${out}" ]] && break
+        printf '%s\n' "${out}"
+        [[ "$(printf '%s\n' "${out}" | grep -c .)" -lt 100 ]] && break
+        page=$((page + 1))
+      done
+      ;;
+    tea)
+      require_cli tea
+      if ! out="$(tea_cmd issues --state all --labels "${label}" --limit 1000 \
+          --output json --fields index 2>/dev/null)"; then
+        return 1
+      fi
+      printf '%s\n' "${out}" \
+        | grep -Eo '"index"[[:space:]]*:[[:space:]]*[0-9]+' \
+        | sed 's/.*:[[:space:]]*//' || true
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# 删除仓库级标签。Issue 关联必须由调用方先迁移并验证。
+raw_repository_label_delete() {
+  local label="$1"
+  local __plat out id ids=""
+  __plat="$(detect_platform)" || return 1
+  case "${__plat}" in
+    gh)
+      require_cli gh
+      gh label delete "${label}" --yes >/dev/null 2>&1
+      ;;
+    glab)
+      require_cli glab
+      glab label delete "${label}" >/dev/null 2>&1
+      ;;
+    tea)
+      require_cli tea
+      if ! out="$(tea_cmd labels list --limit 1000 2>/dev/null)"; then return 1; fi
+      ids="$(printf '%s\n' "${out}" | awk -F'│' -v want="${label}" '
+        {
+          id=$2; name=$4
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", id)
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
+          if (name == want && id ~ /^[0-9]+$/) print id
+        }')"
+      [[ -n "${ids}" ]] || return 1
+      while IFS= read -r id; do
+        [[ -z "${id}" ]] && continue
+        tea_cmd labels delete --id "${id}" >/dev/null 2>&1 || return 1
+      done <<< "${ids}"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# GitHub 标签名大小写不区分，不能创建 P0 / p0 两个标签；原生 rename 可无损规范化。
+raw_repository_label_rename_gh() {
+  local from="$1" to="$2"
+  require_cli gh
+  gh label edit "${from}" --name "${to}" >/dev/null 2>&1
+}
+
+# 将仓库级优先级标签统一为 p0-p3。glab / tea 允许大小写变体并存，
+# 必须先迁移并验证全部 Issue 关联，再删除仓库变体；失败时保留变体以便重试。
+normalize_repository_priority_labels() {
+  local labels actual canonical plat issues num current remaining
+  if ! labels="$(raw_label_names)"; then
+    log_error "无法读取仓库标签目录，不能规范化优先级标签。"
+    return 1
+  fi
+  plat="$(detect_platform)" || return 1
+
+  while IFS= read -r actual; do
+    [[ -z "${actual}" ]] && continue
+    canonical="$(printf '%s' "${actual}" | tr '[:upper:]' '[:lower:]')"
+    is_priority_label "${canonical}" || continue
+    [[ "${actual}" == "${canonical}" ]] && continue
+
+    if [[ "${plat}" == "gh" ]]; then
+      if ! raw_repository_label_rename_gh "${actual}" "${canonical}"; then
+        log_error "仓库优先级标签 '${actual}' 重命名为 '${canonical}' 失败。"
+        return 1
+      fi
+      log_info "normalized ${actual} -> ${canonical}（GitHub 原生重命名，Issue 关联保留）。"
+      continue
+    fi
+
+    if ! issues="$(raw_issue_numbers_by_label "${actual}")"; then
+      log_error "无法枚举仓库标签 '${actual}' 关联的全部 Issue；请升级 ${plat} 后重试。"
+      return 1
+    fi
+    while IFS= read -r num; do
+      [[ -z "${num}" ]] && continue
+      raw_label_add "${num}" "${canonical}" || return 1
+      raw_label_remove "${num}" "${actual}" || return 1
+      if ! current="$(raw_issue_labels "${num}")"; then
+        log_error "迁移后无法验证 Issue #${num} 的标签；仓库变体 '${actual}' 保留。"
+        return 1
+      fi
+      if ! printf '%s\n' "${current}" | grep -Fxq -- "${canonical}" \
+         || printf '%s\n' "${current}" | grep -Fxq -- "${actual}"; then
+        log_error "Issue #${num} 的 '${actual}' -> '${canonical}' 迁移验证失败；仓库变体保留。"
+        return 1
+      fi
+      log_info "migrated Issue #${num}: ${actual} -> ${canonical}."
+    done <<< "${issues}"
+
+    if ! raw_repository_label_delete "${actual}"; then
+      log_error "Issue 迁移完成，但仓库标签变体 '${actual}' 删除失败。"
+      return 1
+    fi
+    log_info "deleted repository label variant ${actual}."
+  done <<< "${labels}"
+
+  if ! remaining="$(raw_label_names)"; then return 1; fi
+  while IFS= read -r actual; do
+    [[ -z "${actual}" ]] && continue
+    canonical="$(printf '%s' "${actual}" | tr '[:upper:]' '[:lower:]')"
+    if is_priority_label "${canonical}" && [[ "${actual}" != "${canonical}" ]]; then
+      log_error "仓库优先级标签规范化未收敛，仍存在 '${actual}'。"
+      return 1
+    fi
+  done <<< "${remaining}"
+}
+
 # ---------------------------------------------------------------------------
 # 自由标签（上下文召回用）：禁止操作互斥标签族
 # ---------------------------------------------------------------------------
@@ -1212,6 +1356,10 @@ cmd_labels_init() {
       fail=$((fail + 1))
     fi
   done
+
+  if [[ "${fail}" -eq 0 ]] && ! normalize_repository_priority_labels; then
+    fail=$((fail + 1))
+  fi
 
   printf '\n'
   if [[ "${fail}" -eq 0 ]]; then
