@@ -162,7 +162,7 @@ description: >-
    - `status=current`（exit 0）→ 继续 doctor。
    - `status=update-available`（exit 2）→ 向用户展示 `local_ref` 与 `latest_tag`，询问**升级**或**本次跳过**。Agent **不得自行升级**。升级则只执行 `INSTALL.md` 的一句话协议，完成后提醒刷新宿主会话；本轮默认停止（协议已变），用户明确要求继续才用**新** Skill 重入 §3.0。跳过则继续 doctor。
    - `status=untagged`（exit 2）→ 说明当前为非稳定安装并列出 `latest_tag`；默认继续本轮，用户也可选择改去安装稳定版。
-   - 检查失败（exit 1，含网络 / 非 git / 无稳定 tag）→ 在对话中声明后**不阻塞**，继续 doctor。
+   - 检查失败（exit 1，含网络 / 非 git / 无稳定 tag）→ **必须**把脚本给出的 git 失败原因（`check-update: git: …` 行）与 `local_ref`（当前已安装的版本）一并转述给用户，并明确说明**「本次无法确认是否为最新版」**；声明后**不阻塞**，继续 doctor。禁止只说「更新检查失败」了事。
 2. 执行 `./scripts/git-ops.sh doctor`（在**目标项目**仓库根）：依次确认运行环境（macOS / Windows Git Bash）、remote 路由到的 CLI、CLI 已安装、CLI 已授权。
 3. doctor 通过后，若本次会话尚未执行过，运行 `./scripts/git-ops.sh labels init`（幂等）：确保优先级 / 状态 / 重试所需的 14 个内置标签（4 优先级 + 7 状态 + 3 重试）在平台上存在，并规范化仓库级 `P0`–`P3` 等优先级大小写变体；迁移其 open/closed Issue 关联并回读验证后才删除变体，任一步失败即保留变体并 `exit 1`。doctor 也会检查这套标签是否就绪，缺失即 `exit 1` 并提示运行 `labels init`。
 4. **全部通过** → 进入 §3.0.1 启动分发。**禁止在分发完成之前读取任何 `roles/*.md`。**

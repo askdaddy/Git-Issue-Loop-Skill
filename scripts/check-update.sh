@@ -155,15 +155,22 @@ if DESC="$(git -C "${ROOT}" describe --tags --exact-match HEAD 2>/dev/null)"; th
 fi
 
 REMOTE_OUT=""
-if ! REMOTE_OUT="$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags --refs "${REPO}" 2>/dev/null)"; then
+# 失败时保留 git 自己的 stderr：只说「ls-remote failed」无法区分断网 / DNS / TLS /
+# 授权失效 / 速率限制，用户无从判断该重试还是该重新登录。
+if ! REMOTE_OUT="$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags --refs "${REPO}" 2>&1)"; then
   echo "check-update: git ls-remote failed for ${REPO}" >&2
+  printf '%s\n' "${REMOTE_OUT}" | sed '/^[[:space:]]*$/d; s/^/check-update: git: /' >&2
+  # 本地版本已经算出来了，不能因为远端不可达就一并丢掉：调用方仍需知道当前装的是哪一版。
+  emit_result error "${LOCAL_REF}" "${LOCAL_SHA}" "" "" "${REPO}"
   exit 1
 fi
 
-PICK="$(printf '%s\n' "${REMOTE_OUT}" | pick_highest_stable)" || {
+PICK=""
+if ! PICK="$(printf '%s\n' "${REMOTE_OUT}" | pick_highest_stable)"; then
   echo "check-update: no stable vX.Y.Z tags at ${REPO}" >&2
+  emit_result error "${LOCAL_REF}" "${LOCAL_SHA}" "" "" "${REPO}"
   exit 1
-}
+fi
 LATEST_TAG="${PICK%% *}"
 LATEST_SHA="${PICK#* }"
 
