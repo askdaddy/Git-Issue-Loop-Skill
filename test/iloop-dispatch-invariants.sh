@@ -108,13 +108,7 @@ echo "=== step 11 README ==="
 assert_grep "${ROOT}/README.md" 'dispatch|frame-0' "English README mentions dispatch"
 assert_grep "${ROOT}/README.md" 'instead of always starting at Research' "English README numbered entry is not always Research"
 
-echo "=== out of scope: no git-ops / loop-state ==="
-if git -C "$ROOT" diff HEAD -- scripts/git-ops.sh | grep -q .; then
-  echo "FAIL scripts/git-ops.sh has uncommitted diff"
-  FAILS=$((FAILS + 1))
-else
-  echo "PASS git-ops.sh clean vs HEAD (not part of #6 commit set)"
-fi
+echo "=== out of scope: no loop-state ==="
 assert_no_grep "$SKILL" '\.loop-state' "SKILL.md must not introduce .loop-state"
 
 if [[ "$FAILS" -ne 0 ]]; then

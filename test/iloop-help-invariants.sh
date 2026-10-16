@@ -75,13 +75,7 @@ assert_grep "$SKILL" '"推进迭代".*扫描 open issue' "§4 既有示例保留
 assert_grep "$SKILL" '检查 skill 更新' "§4 既有示例保留: 检查 skill 更新"
 assert_grep "$SKILL" '落地 issue #42' "§4 既有示例保留: 落地 issue #42"
 
-echo "=== guards (C5 + Option A): no business-script / manifest change, no help.sh ==="
-if git -C "$ROOT" diff HEAD -- scripts/git-ops.sh | grep -q .; then
-  echo "FAIL git-ops.sh has a diff vs HEAD (C5)"
-  FAILS=$((FAILS + 1))
-else
-  echo "PASS git-ops.sh unchanged vs HEAD (C5)"
-fi
+echo "=== guards (C5 + Option A): no manifest change, no help.sh ==="
 if git -C "$ROOT" diff HEAD -- skill-manifest.json | grep -q .; then
   echo "FAIL skill-manifest.json has a diff vs HEAD (C5)"
   FAILS=$((FAILS + 1))

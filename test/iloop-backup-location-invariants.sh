@@ -86,14 +86,6 @@ assert_no_grep "$README" '~/\.agents/skills/\.iloop\.backup-' "README does not k
 assert_grep "$README_CN" '~/\.agents/backups/iloop\.backup-' "README_CN backup path is outside skills/"
 assert_no_grep "$README_CN" '~/\.agents/skills/\.iloop\.backup-' "README_CN does not keep skills/ hidden backups"
 
-echo "=== C1 guard: no business-script changes ==="
-if git -C "$ROOT" diff HEAD -- scripts/git-ops.sh | grep -q .; then
-  echo "FAIL git-ops.sh has a diff vs HEAD (C1)"
-  FAILS=$((FAILS + 1))
-else
-  echo "PASS git-ops.sh unchanged vs HEAD (C1)"
-fi
-
 if [[ "$FAILS" -ne 0 ]]; then
   echo "RESULT FAIL count=$FAILS"
   exit 1

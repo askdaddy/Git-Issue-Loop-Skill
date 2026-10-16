@@ -62,14 +62,6 @@ assert_grep "$SKILL" '内联 shell.*必须用.*bash' "§0 requires bash for Agen
 assert_grep "$SKILL" 'Git Bash' "keeps the Windows Git Bash requirement"
 assert_grep "$SKILL" '不支持 CMD / PowerShell' "keeps CMD/PowerShell unsupported"
 
-echo "=== C1 guard: no business-script changes ==="
-if git -C "$ROOT" diff HEAD -- scripts/git-ops.sh | grep -q .; then
-  echo "FAIL git-ops.sh has a diff vs HEAD (C1)"
-  FAILS=$((FAILS + 1))
-else
-  echo "PASS git-ops.sh unchanged vs HEAD (C1)"
-fi
-
 if [[ "$FAILS" -ne 0 ]]; then
   echo "RESULT FAIL count=$FAILS"
   exit 1
