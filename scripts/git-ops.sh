@@ -22,7 +22,7 @@
 #
 #   完整子命令清单以 usage() 为唯一事实来源（不带参数运行 ./git-ops.sh 即打印）：
 #   issue list|get|comment|create|close|reopen|priority|status|retry|label、
-#   labels init、guard <role>、workspace status、platform、doctor。
+#   labels init、guard <role>、workspace status|start、platform、doctor。
 #   排他语义：priority / status / retry 三族各自同时只保留一个标签，
 #   由脚本在写入时自动清理同族其他标签。
 #
@@ -99,6 +99,7 @@ Commands:
   git-ops.sh labels init                            初始化标签体系（4 优先级 + 7 状态 + 3 重试，幂等）
   git-ops.sh guard <role>                          可写区域越界自检（提交前必跑；role=planner|developer|reviewer）
   git-ops.sh workspace status                       报告工作区隔离状态（主/linked、分支、归属 Issue、worktree 清单）
+  git-ops.sh workspace start <num> [--base <ref>]   为 Issue <num> 建立隔离工作区（仓库外 worktree + riper/<num> 分支，基于上游）
   git-ops.sh platform                               打印检测到的托管平台
   git-ops.sh doctor                                 自检：运行环境 → CLI 路由 → 安装 → 授权 → 14 个内置标签就绪
                                                     （任一项不就绪即输出指南并 exit 1）
@@ -1655,6 +1656,117 @@ cmd_workspace_status() {
 }
 
 # ---------------------------------------------------------------------------
+# workspace start <N> [--base <ref>]：为 Issue N 建立隔离工作区
+#
+# 主工作树   → fetch 后基于 origin/<默认分支> 自建仓库外 worktree + riper/<N> 分支
+# linked 树  → 不嵌套创建，只把当前工作区规范化到 riper/<N>（见 normalize_linked_workspace）
+# 基分支恒为上游：绝不回退到本地分支，否则会携带他人未推送的提交。
+# ---------------------------------------------------------------------------
+cmd_workspace_start() {
+  local num="" base=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --base)
+        if [[ $# -lt 2 ]]; then
+          log_error "--base 需要一个 <ref> 参数。"
+          exit 1
+        fi
+        base="$2"; shift 2
+        ;;
+      -*)
+        log_error "workspace start：未知选项 '$1'（Issue 编号必须是正整数）。"
+        exit 1
+        ;;
+      *)
+        if [[ -z "${num}" ]]; then
+          num="$1"; shift
+        else
+          log_error "workspace start：多余参数 '$1'。"
+          exit 1
+        fi
+        ;;
+    esac
+  done
+
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    log_error "当前不在 git 工作树内，无法建立工作区。"
+    exit 1
+  fi
+  if ! valid_issue_num "${num}"; then
+    log_error "Issue 编号必须是正整数（收到：'${num:-<空>}'）。"
+    exit 1
+  fi
+
+  local branch="${BRANCH_PREFIX}/${num}"
+
+  # 分支已存在 → 快失败。兼作本地互斥信号：该 Issue 可能已被另一会话认领。
+  # 不自动删除或复用（A4 + 禁破坏性操作）。
+  if git show-ref --verify --quiet "refs/heads/${branch}"; then
+    log_error "分支 ${branch} 已存在——该 Issue 可能已被另一会话认领，或上次异常退出残留。"
+    log_error "本脚本不会自动删除或复用它。请人工确认后处置："
+    log_error "  git worktree list           # 看它是否已绑定工作区"
+    log_error "  git branch -d ${branch}     # 确认无用后再由你手工删除"
+    exit 1
+  fi
+
+  if is_linked_worktree; then
+    log_error "当前已在 linked worktree 内，不在主工作树。"
+    log_error "请回到主工作树执行本命令，或在该工作区内直接把分支切到 ${branch}。"
+    exit 1
+  fi
+
+  # --- 主工作树：基于上游自建 worktree ---
+  local db base_ref wt abs
+
+  # 路径冲突先于 fetch 检查：纯本地判断，避免为注定失败的调用打一次网络。
+  if ! wt="$(wt_root "${num}")"; then
+    log_error "无法计算 worktree 根路径（主工作树解析失败）。"
+    exit 1
+  fi
+  if [[ -e "${wt}" ]]; then
+    log_error "目标路径已存在：${wt}"
+    log_error "本脚本不会覆盖或删除它。请人工确认其内容后处置。"
+    exit 1
+  fi
+
+  if [[ -n "${base}" ]]; then
+    if ! git rev-parse --verify -q "${base}" >/dev/null 2>&1; then
+      log_error "--base 指定的 ref 不存在：'${base}'。"
+      exit 1
+    fi
+    base_ref="${base}"
+  else
+    if ! db="$(default_branch)"; then
+      log_error "无法探测默认分支（origin/HEAD 缺失，且 git remote show origin 失败）。"
+      log_error "本脚本不会回退到本地分支——那会携带他人未推送的提交。"
+      log_error "请显式指定基分支：./scripts/git-ops.sh workspace start ${num} --base <ref>"
+      exit 1
+    fi
+    log_info "默认分支：${db}"
+    if ! git fetch -q origin "${db}"; then
+      log_error "git fetch origin ${db} 失败（网络不可达或权限不足）。"
+      log_error "离线时请显式指定一个本地 ref：./scripts/git-ops.sh workspace start ${num} --base <ref>"
+      exit 1
+    fi
+    base_ref="origin/${db}"
+  fi
+
+  # --no-track 为必需项：不加时 git 会把 riper/<N> 设为 tracking origin/<默认分支>，
+  # 导致 push.default=simple 下的推送因分支名与上游名不一致而被拒。
+  if ! git worktree add --no-track -b "${branch}" "${wt}" "${base_ref}"; then
+    log_error "git worktree add 失败（基分支：${base_ref}）。"
+    exit 1
+  fi
+
+  abs="$(cd "${wt}" && pwd -P)"
+  log_info "工作区已建立：Issue #${num}"
+  log_info "  分支：${branch}（基于 ${base_ref}，未设 upstream）"
+  log_info "  路径：${abs}"
+  log_info "后续所有仓库内命令必须以该绝对路径为 cwd——宿主可能在每次调用后重置 cwd，"
+  log_info "故请用 'cd ${abs} && …' 前缀或工具的工作目录参数，不要假设 cwd 会延续。"
+}
+
+# ---------------------------------------------------------------------------
 # 参数路由（主入口）
 # ---------------------------------------------------------------------------
 main() {
@@ -1707,6 +1819,11 @@ main() {
         status)
           [[ $# -eq 0 ]] || usage
           cmd_workspace_status
+          ;;
+        start)
+          # 编号与 --base 的校验在 cmd_workspace_start 内完成（需要给出精确错误文案）
+          [[ $# -ge 1 ]] || usage
+          cmd_workspace_start "$@"
           ;;
         *)
           usage
