@@ -22,7 +22,7 @@
 #
 #   完整子命令清单以 usage() 为唯一事实来源（不带参数运行 ./git-ops.sh 即打印）：
 #   issue list|get|comment|create|close|reopen|priority|status|retry|label、
-#   labels init、guard <role>、platform、doctor。
+#   labels init、guard <role>、workspace status、platform、doctor。
 #   排他语义：priority / status / retry 三族各自同时只保留一个标签，
 #   由脚本在写入时自动清理同族其他标签。
 #
@@ -98,6 +98,7 @@ Commands:
   git-ops.sh issue label <num> remove <label>      移除自由标签
   git-ops.sh labels init                            初始化标签体系（4 优先级 + 7 状态 + 3 重试，幂等）
   git-ops.sh guard <role>                          可写区域越界自检（提交前必跑；role=planner|developer|reviewer）
+  git-ops.sh workspace status                       报告工作区隔离状态（主/linked、分支、归属 Issue、worktree 清单）
   git-ops.sh platform                               打印检测到的托管平台
   git-ops.sh doctor                                 自检：运行环境 → CLI 路由 → 安装 → 授权 → 14 个内置标签就绪
                                                     （任一项不就绪即输出指南并 exit 1）
@@ -1485,6 +1486,175 @@ EOF_STATUS
 }
 
 # ---------------------------------------------------------------------------
+# 工作区隔离（git worktree / 分支）：多会话并行操作同一仓库时的物理隔离层
+#
+# 模型：一 Issue 一 worktree 一分支。分支名 riper/<N>（仅由 Issue 编号派生），
+# 基分支恒为 origin/<默认分支>（不基于本地分支，避免携带他人未推送的提交），
+# worktree 根在仓库外 ../.iloop-worktrees/<repo>/<N>（避免测试套件 glob/find
+# 误扫其他会话的文件）。
+#
+# 只依赖 git 内建子命令，不依赖平台 CLI，故本段一律不调用 require_cli ——
+# 无 CLI 授权的环境也能建工作区（与 doctor 的强授权要求解耦）。
+# 属环境级操作（同 doctor / labels init / platform），不做角色门控；
+# 但它不豁免 guard：guard 仍在提交前跑。
+#
+# 严禁破坏性命令：reset --hard / clean / checkout . / branch -D /
+# worktree remove --force。有未提交改动或未合并提交时一律停下报告，不丢弃任何一方。
+# ---------------------------------------------------------------------------
+
+WORKTREE_ROOT_NAME=".iloop-worktrees"
+BRANCH_PREFIX="riper"
+
+repo_toplevel() {
+  git rev-parse --show-toplevel
+}
+
+git_dir_abs() {
+  git rev-parse --absolute-git-dir
+}
+
+# 主仓库的 git dir（绝对路径）。--git-common-dir 的输出可能相对 cwd，故用 cd+pwd
+# 转绝对；不用 --path-format=absolute（需 git 2.31+，Apple git 未必满足）。
+# 必须用 pwd -P（物理路径）：git rev-parse --absolute-git-dir 返回物理解析结果，
+# 而裸 pwd 返回逻辑路径。macOS 上 /tmp -> /private/tmp 等符号链接会让两者字符串不等，
+# 导致 is_linked_worktree 把主工作树误判为 linked。
+git_common_dir_abs() {
+  local d
+  d="$(git rev-parse --git-common-dir)" || return 1
+  ( cd "${d}" && pwd -P )
+}
+
+# 主工作树根 = common git dir 的父目录。
+# lazy-ladder: 上限为标准布局 <root>/.git；GIT_DIR 被外部改写、submodule 或
+#              worktree-of-worktree 等非标准布局会算错，届时改读 common dir 下的
+#              worktrees 注册表。
+primary_toplevel() {
+  local gcd
+  gcd="$(git_common_dir_abs)" || return 1
+  dirname "${gcd}"
+}
+
+# 当前是否处于 linked worktree（而非主工作树）
+is_linked_worktree() {
+  local gd gcd
+  gd="$(git_dir_abs)" || return 1
+  gcd="$(git_common_dir_abs)" || return 1
+  [[ "${gd}" != "${gcd}" ]]
+}
+
+# 当前分支名；detached HEAD 时返回非 0
+current_branch() {
+  git symbolic-ref --short HEAD 2>/dev/null
+}
+
+# 默认分支（只读本地 ref，不联网）：origin/HEAD 由 git clone 设置
+default_branch_local() {
+  local ref
+  ref="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)" || return 1
+  [[ -n "${ref}" ]] || return 1
+  printf '%s\n' "${ref#origin/}"
+}
+
+# 默认分支（本地探测失败时联网问远端）。两者都失败返回非 0 —— 调用方必须停下报告，
+# 绝不回退到本地分支（回退即违背「基于上游」的约定）。
+default_branch() {
+  local ref
+  if ref="$(default_branch_local)"; then
+    printf '%s\n' "${ref}"
+    return 0
+  fi
+  ref="$(git remote show origin 2>/dev/null | sed -n 's/^[[:space:]]*HEAD branch: //p')" || return 1
+  [[ -n "${ref}" ]] || return 1
+  printf '%s\n' "${ref}"
+}
+
+# worktree 根：<主工作树父目录>/.iloop-worktrees/<repo>/<N>
+# 基准必须是主工作树而非 cwd —— 否则在 linked worktree 内调用会算出错误路径。
+wt_root() {
+  local n="$1" primary
+  primary="$(primary_toplevel)" || return 1
+  printf '%s/%s/%s/%s\n' \
+    "$(dirname "${primary}")" "${WORKTREE_ROOT_NAME}" "$(basename "${primary}")" "${n}"
+}
+
+# 从 riper/<N> 解析 Issue 号；非该形态返回非 0
+issue_of_branch() {
+  local b="$1"
+  case "${b}" in
+    "${BRANCH_PREFIX}"/*) printf '%s\n' "${b#"${BRANCH_PREFIX}"/}" ;;
+    *)                    return 1 ;;
+  esac
+}
+
+# Issue 编号必须是正整数（拒绝空串、非数字、0、负数、小数）
+valid_issue_num() {
+  case "$1" in
+    ''|*[!0-9]*) return 1 ;;
+    0)           return 1 ;;
+    *)           return 0 ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# workspace status：只读报告工作区隔离状态。不联网、无副作用。
+# ---------------------------------------------------------------------------
+cmd_workspace_status() {
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    log_error "当前不在 git 工作树内，无法判定工作区状态。"
+    exit 1
+  fi
+
+  local top primary branch issue db counts dirty
+  top="$(repo_toplevel)" || exit 1
+
+  if is_linked_worktree; then
+    log_info "工作区类型：linked worktree（已隔离）"
+  else
+    log_info "工作区类型：主工作树"
+  fi
+  log_info "当前工作树：${top}"
+
+  if branch="$(current_branch)"; then
+    log_info "当前分支：${branch}"
+    if issue="$(issue_of_branch "${branch}")"; then
+      log_info "归属 Issue：#${issue}"
+    else
+      log_info "归属 Issue：无（分支非 ${BRANCH_PREFIX}/<N> 形态）"
+    fi
+  else
+    log_info "当前分支：无（detached HEAD @ $(git rev-parse --short HEAD)）"
+    log_info "归属 Issue：无 —— detached HEAD 无分支身份，其改动无法合并 / 回滚 / 追溯。"
+    log_info "修复方式：./scripts/git-ops.sh workspace start <N>（会挂上 ${BRANCH_PREFIX}/<N> 并保留现有提交）"
+  fi
+
+  if primary="$(primary_toplevel)"; then
+    log_info "主工作树：${primary}"
+    log_info "worktree 根：$(dirname "${primary}")/${WORKTREE_ROOT_NAME}/$(basename "${primary}")"
+  fi
+
+  if db="$(default_branch_local)" && git rev-parse --verify -q "origin/${db}" >/dev/null 2>&1; then
+    log_info "基分支：origin/${db}"
+    counts="$(git rev-list --left-right --count "origin/${db}...HEAD" 2>/dev/null)" || counts=""
+    if [[ -n "${counts}" ]]; then
+      log_info "相对基分支：落后 ${counts%%$'\t'*} / 领先 ${counts##*$'\t'}"
+    fi
+  else
+    log_info "基分支：本地未能探测（origin/HEAD 缺失）；workspace start 会联网兜底，或用 --base <ref> 指定"
+  fi
+
+  dirty="$(git status --porcelain | grep -c . || true)"
+  log_info "未提交变更文件数：${dirty}"
+
+  log_info "worktree 清单："
+  git worktree list | sed 's/^/[git-ops]   /'
+
+  if ! is_linked_worktree && [[ "${dirty}" != "0" ]]; then
+    log_info "注意：你在主工作树且有 ${dirty} 个未提交变更。若存在并行会话，这些变更可能不属于本角色 / 本 Issue，"
+    log_info "      并会让 guard 把无辜的并行判成越界。并行推进请先执行：./scripts/git-ops.sh workspace start <N>"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # 参数路由（主入口）
 # ---------------------------------------------------------------------------
 main() {
@@ -1525,6 +1695,23 @@ main() {
     guard)
       [[ $# -eq 1 ]] || usage
       cmd_guard "$1"
+      ;;
+    workspace)
+      # 工作区隔离（环境级操作，不限角色）。子命令各自的参数校验在其分支内完成。
+      if [[ $# -lt 1 ]]; then
+        usage
+      fi
+      local wsub="$1"
+      shift
+      case "${wsub}" in
+        status)
+          [[ $# -eq 0 ]] || usage
+          cmd_workspace_status
+          ;;
+        *)
+          usage
+          ;;
+      esac
       ;;
     issue)
       # list 子命令的参数全为可选，故守卫放宽为 `$# -lt 1`（裸 `issue` 仍报 usage）；
