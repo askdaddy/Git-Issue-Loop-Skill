@@ -22,7 +22,7 @@
 #
 #   完整子命令清单以 usage() 为唯一事实来源（不带参数运行 ./git-ops.sh 即打印）：
 #   issue list|get|comment|create|close|reopen|priority|status|retry|label、
-#   labels init、guard <role>、workspace status|start|finish、platform、doctor。
+#   labels init、guard <role> [num]、workspace status|start|finish、platform、doctor。
 #   排他语义：priority / status / retry 三族各自同时只保留一个标签，
 #   由脚本在写入时自动清理同族其他标签。
 #
@@ -97,7 +97,8 @@ Commands:
   git-ops.sh issue label <num> add <label>         添加自由标签（上下文召回用）
   git-ops.sh issue label <num> remove <label>      移除自由标签
   git-ops.sh labels init                            初始化标签体系（4 优先级 + 7 状态 + 3 重试，幂等）
-  git-ops.sh guard <role>                          可写区域越界自检（提交前必跑；role=planner|developer|reviewer）
+  git-ops.sh guard <role> [num]                    可写区域越界自检（提交前必跑；role=planner|developer|reviewer；
+                                                    num=Issue 编号，给出时额外校验当前分支是否为 riper/<num>）
   git-ops.sh workspace status                       报告工作区隔离状态（主/linked、分支、归属 Issue、worktree 清单）
   git-ops.sh workspace start <num> [--base <ref>]   为 Issue <num> 建立隔离工作区（仓库外 worktree + riper/<num> 分支，基于上游）
   git-ops.sh workspace finish <num>                 清理 Issue <num> 的本地工作区（仅干净且已合并进上游时；不含推送/合并）
@@ -1441,14 +1442,39 @@ cmd_doctor() {
 # 以 `git status --porcelain` 取全部变更（已暂存 + 未暂存 + 未跟踪；被 .gitignore
 # 忽略的天然不列出），逐个比对 role_writable_paths / path_writable 白名单。
 # 能力边界：只能校验「区域级越界」，无法校验「是否超出 plan 范围」（design 边界 4）。
-# 用法：cmd_guard <role>
+# 用法：cmd_guard <role> [Issue 编号]
+#   给出编号时额外校验当前分支是否为 riper/<该编号>；分支非 riper/* 形态只提示不失败。
 # ---------------------------------------------------------------------------
 cmd_guard() {
-  local role="$1"
+  local role="$1" num="${2:-}"
 
   # 校验目标角色合法性（非法角色 → exit 1）；guard 动作三角色均放行
   check_permission guard "${role}"
   role_writable_paths "${role}" >/dev/null
+
+  # Issue 号一致性校验放在这里而非 check_permission：后者在 ROLE 为空（未带 --role）
+  # 时会提前 return，校验不会执行，而 guard <role> <N> 必须无条件生效。
+  if [[ -n "${num}" ]]; then
+    if ! valid_issue_num "${num}"; then
+      log_error "guard：Issue 编号必须是正整数（收到：'${num}'）。"
+      exit 1
+    fi
+    local cur owner=""
+    cur="$(current_branch)" || true
+    if [[ -n "${cur}" ]]; then
+      owner="$(issue_of_branch "${cur}")" || true
+    fi
+    if [[ -n "${owner}" ]]; then
+      if [[ "${owner}" != "${num}" ]]; then
+        log_error "guard：当前分支 ${cur} 属 Issue #${owner}，与给定的 Issue #${num} 不一致。"
+        log_error "请切到 Issue #${num} 的工作区，或用正确编号：./scripts/git-ops.sh guard ${role} ${owner}"
+        exit 1
+      fi
+    else
+      log_info "提示：当前工作区不在 ${BRANCH_PREFIX}/<N> 分支上（${cur:-detached HEAD}），跳过 Issue 号一致性校验。"
+      log_info "      并行推进请先执行：./scripts/git-ops.sh workspace start ${num}"
+    fi
+  fi
 
   local changed
   changed="$(git status --porcelain)"
@@ -1971,8 +1997,9 @@ main() {
       cmd_doctor
       ;;
     guard)
-      [[ $# -eq 1 ]] || usage
-      cmd_guard "$1"
+      # 第二参数（Issue 编号）可选；超出 2 个走 usage
+      [[ $# -ge 1 && $# -le 2 ]] || usage
+      cmd_guard "$@"
       ;;
     workspace)
       # 工作区隔离（环境级操作，不限角色）。子命令各自的参数校验在其分支内完成。
