@@ -1457,6 +1457,13 @@ cmd_guard() {
     return 0
   fi
 
+  # 并行污染诊断：只在主工作树出现。多会话共用同一个主工作树时，下列变更可能来自
+  # 别的会话 / 别的 Issue，会被本自检当成本角色越界。纯提示，不影响判定与 exit code。
+  if ! is_linked_worktree; then
+    log_info "提示：当前在主工作树。若存在并行会话，下列变更可能不属于本角色 / 本 Issue，"
+    log_info "      并会让本自检把无辜的并行判成越界。并行推进请先执行：./scripts/git-ops.sh workspace start <N>"
+  fi
+
   local total=0 violated=0 line path violations=""
   while IFS= read -r line; do
     [[ -z "${line}" ]] && continue
