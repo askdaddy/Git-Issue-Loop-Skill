@@ -1656,6 +1656,66 @@ cmd_workspace_status() {
 }
 
 # ---------------------------------------------------------------------------
+# linked worktree 内的规范化（C11）：绝不新建 worktree，只把当前工作区挂到 riper/<N>
+#
+# 四态状态机：
+#   已在 riper/<N>        → 幂等，报告就绪
+#   在 riper/<M>（M≠N）   → 拒绝：工作区已属 Issue M，不得挪用
+#   detached HEAD         → git switch -c riper/<N>，保留宿主已有提交，并声明基线非上游
+#   其他分支（如 main）    → 拒绝且不切换：擅自 switch 会丢失该会话的上下文
+#
+# 失败一律 return 1（由调用方 exit），不在 helper 里直接退出。
+# ---------------------------------------------------------------------------
+normalize_linked_workspace() {
+  local num="$1" branch="$2" cur sha db
+
+  if cur="$(current_branch)"; then
+    case "${cur}" in
+      "${branch}")
+        log_info "工作区已就绪（幂等）：Issue #${num}"
+        log_info "  分支：${branch}（linked worktree，未做任何改动）"
+        log_info "  路径：$(pwd -P)"
+        return 0
+        ;;
+      "${BRANCH_PREFIX}"/*)
+        log_error "当前工作区已属 Issue #${cur#"${BRANCH_PREFIX}"/}（分支 ${cur}），不得挪用于 Issue #${num}。"
+        log_error "本脚本未做任何 git 写操作。请在主工作树为 Issue #${num} 另建工作区："
+        log_error "  cd $(primary_toplevel) && ./scripts/git-ops.sh workspace start ${num}"
+        return 1
+        ;;
+      *)
+        log_error "当前工作区停在分支 ${cur}，不是 ${BRANCH_PREFIX}/<N> 形态。"
+        log_error "本脚本不会擅自切换分支（会丢失该会话的上下文），未做任何 git 写操作。"
+        return 1
+        ;;
+    esac
+  fi
+
+  # detached HEAD：宿主（如 codex / Qoder 的 worktree 隔离）建了工作区却没给分支身份。
+  # 用 switch -c 就地挂分支，宿主已产生的提交全部保留在新分支上。
+  sha="$(git rev-parse --short HEAD)"
+  if git show-ref --verify --quiet "refs/heads/${branch}"; then
+    log_error "分支 ${branch} 已存在，而当前工作区是 detached HEAD @ ${sha}。"
+    log_error "本脚本不会自动删除或复用它。请人工确认后处置："
+    log_error "  git worktree list           # 看它是否已绑定别的工作区"
+    log_error "  git branch -d ${branch}     # 确认无用后再由你手工删除"
+    return 1
+  fi
+  if ! git switch -c "${branch}"; then
+    log_error "git switch -c ${branch} 失败。"
+    return 1
+  fi
+
+  db="$(default_branch_local 2>/dev/null || printf '<未探测>')"
+  log_info "工作区已规范化：Issue #${num}"
+  log_info "  分支：${branch}（由 detached HEAD 就地挂载，原有提交全部保留）"
+  log_info "  路径：$(pwd -P)"
+  log_info "  基线：detached HEAD @ ${sha}，**不是** origin/${db}——"
+  log_info "        宿主建工作区时可能已带入本地或他处提交，请自行确认基线是否符合预期。"
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # workspace start <N> [--base <ref>]：为 Issue N 建立隔离工作区
 #
 # 主工作树   → fetch 后基于 origin/<默认分支> 自建仓库外 worktree + riper/<N> 分支
@@ -1699,6 +1759,13 @@ cmd_workspace_start() {
 
   local branch="${BRANCH_PREFIX}/${num}"
 
+  # linked worktree 内绝不新建 worktree（C11 不嵌套）；必须先于「分支已存在」判断，
+  # 否则幂等重入（已在 riper/<N>）会被那条快失败误伤。
+  if is_linked_worktree; then
+    normalize_linked_workspace "${num}" "${branch}" || exit 1
+    return 0
+  fi
+
   # 分支已存在 → 快失败。兼作本地互斥信号：该 Issue 可能已被另一会话认领。
   # 不自动删除或复用（A4 + 禁破坏性操作）。
   if git show-ref --verify --quiet "refs/heads/${branch}"; then
@@ -1706,12 +1773,6 @@ cmd_workspace_start() {
     log_error "本脚本不会自动删除或复用它。请人工确认后处置："
     log_error "  git worktree list           # 看它是否已绑定工作区"
     log_error "  git branch -d ${branch}     # 确认无用后再由你手工删除"
-    exit 1
-  fi
-
-  if is_linked_worktree; then
-    log_error "当前已在 linked worktree 内，不在主工作树。"
-    log_error "请回到主工作树执行本命令，或在该工作区内直接把分支切到 ${branch}。"
     exit 1
   fi
 
