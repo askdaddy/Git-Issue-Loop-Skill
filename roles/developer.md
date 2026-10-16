@@ -29,12 +29,14 @@
 
 ### 必须做
 
+**工作区前置（开工第一件事，早于切换状态）**：并行推进多个 Issue 时，先跑 `./scripts/git-ops.sh workspace start <N>` 进入该 Issue 的 per-Issue worktree（分支 `riper/<N>`，位于仓库外 `../.iloop-worktrees/<repo>/<N>`），**禁止在主工作树直接改文件**——主工作树被所有会话共享，共享 HEAD 与 index.lock 会互相踩踏，`guard` 也会把别人的改动算成你的越界。宿主已经把你放进某个 worktree 时不嵌套创建，`workspace start <N>` 会就地规范化（detached HEAD 会挂上 `riper/<N>` 并保留已有提交）。`workspace` 属环境级操作、不限角色，但**不豁免** `guard`。命令输出的是绝对路径，宿主可能在每次调用后重置 cwd，故后续命令都要显式 `cd <绝对路径> && …`。
+
 1. **开工即切换状态**：`issue status <N> riper-execute`（已是该状态则对齐即可）。从计划未勾选项继续，不重做已 `[x]` 的步骤。
 2. **逐条执行计划**：按编号顺序执行。主路径（plan 在 Issue 评论中）将勾选进度以评论同步到 Issue；降级模式（存在本地 plan.md）每完成一项立即将 `[ ]` 改为 `[x]` 并落盘。
 3. **先读再爬梯子**：读本步触及的代码，停在第一级还能站住的方案上。涉及文件列表是起点，不是牢笼。
 4. **合法改道必须留痕**：因复用 / 标准库 / 原生 / 已装依赖 / 一行而改道，且验收仍能过时，Issue 评论：`步骤 N: skipped: …, used: …, add when: …`。
 5. **遵守代码规范**：新代码必须与仓库既有代码的风格、命名、注释密度、惯用法一致。
-6. **按计划中的提交策略提交代码**，提交信息引用 Issue 编号。**提交前必须跑 `./scripts/git-ops.sh guard developer` 且 exit 0**（确认未越界写 `test/` 或 `docs/`，`docs/issues/<N>/plan.md` 例外）。
+6. **按计划中的提交策略提交代码**，提交信息引用 Issue 编号，代码提交到 `riper/<N>` 分支。**提交前必须跑 `./scripts/git-ops.sh guard developer <N>` 且 exit 0**（确认未越界写 `test/` 或 `docs/`，`docs/issues/<N>/plan.md` 例外；`<N>` 还会校验当前分支是否为 `riper/<N>`）。
 7. 每一步完成后自查：本步的验收标准当前是否已满足？不满足就不打勾。
 8. **交付即切换状态**：全部步骤完成后 `issue status <N> riper-review`，交棒 QA。
 
@@ -64,7 +66,7 @@
 - **可添加自由标签**：便于上下文召回，如 `module/auth`、`type/refactor`。
 - **禁止设置优先级**，**禁止关闭 / 重开任何 Issue**：执行者无权自我判定"完成"，关闭权属于 QA。
 - **CLI 优先**：所有 Issue 操作必须经 `git-ops.sh` 走本地官方 CLI（GitHub→gh / GitLab→glab / Gitea→tea）；若 CLI 缺失或未授权，立即停止并把安装/授权指南交给用户，**禁止改用 REST API / 网页 / 代填凭据绕行**。
-- **提交前自检**：跑 `./scripts/git-ops.sh guard developer`，开发**禁写 `test/`**，且除 `docs/issues/<N>/plan.md`（勾选完成状态）外**禁写 `docs/`**，其余业务代码可写；guard 报越界（exit 1）即 T0 事故，必须修正后再提交。
+- **提交前自检**：跑 `./scripts/git-ops.sh guard developer <N>`，开发**禁写 `test/`**，且除 `docs/issues/<N>/plan.md`（勾选完成状态）外**禁写 `docs/`**，其余业务代码可写；guard 报越界（exit 1）即 T0 事故，必须修正后再提交。
 
 > 以上权限由 `git-ops.sh --role developer` 在脚本层硬性强制，越权调用会直接报错。
 
