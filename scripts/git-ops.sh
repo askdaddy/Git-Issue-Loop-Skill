@@ -22,7 +22,7 @@
 #
 #   完整子命令清单以 usage() 为唯一事实来源（不带参数运行 ./git-ops.sh 即打印）：
 #   issue list|get|comment|create|close|reopen|priority|status|retry|label、
-#   labels init、guard <role>、workspace status|start、platform、doctor。
+#   labels init、guard <role>、workspace status|start|finish、platform、doctor。
 #   排他语义：priority / status / retry 三族各自同时只保留一个标签，
 #   由脚本在写入时自动清理同族其他标签。
 #
@@ -100,6 +100,7 @@ Commands:
   git-ops.sh guard <role>                          可写区域越界自检（提交前必跑；role=planner|developer|reviewer）
   git-ops.sh workspace status                       报告工作区隔离状态（主/linked、分支、归属 Issue、worktree 清单）
   git-ops.sh workspace start <num> [--base <ref>]   为 Issue <num> 建立隔离工作区（仓库外 worktree + riper/<num> 分支，基于上游）
+  git-ops.sh workspace finish <num>                 清理 Issue <num> 的本地工作区（仅干净且已合并进上游时；不含推送/合并）
   git-ops.sh platform                               打印检测到的托管平台
   git-ops.sh doctor                                 自检：运行环境 → CLI 路由 → 安装 → 授权 → 14 个内置标签就绪
                                                     （任一项不就绪即输出指南并 exit 1）
@@ -1827,6 +1828,103 @@ cmd_workspace_start() {
   log_info "故请用 'cd ${abs} && …' 前缀或工具的工作目录参数，不要假设 cwd 会延续。"
 }
 
+# 绑定到指定分支的 worktree 路径；没有绑定则输出空（返回 0）。
+# porcelain 每个条目内 worktree 行先于 branch 行，故累积 path 再匹配即可。
+worktree_of_branch() {
+  local want="refs/heads/$1" path="" line
+  while IFS= read -r line; do
+    case "${line}" in
+      "worktree "*) path="${line#worktree }" ;;
+      "branch "*)
+        if [[ "${line#branch }" == "${want}" ]]; then
+          printf '%s\n' "${path}"
+          return 0
+        fi
+        ;;
+    esac
+  done < <(git worktree list --porcelain)
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# workspace finish <N>：清理 Issue N 的本地工作区（A1：仅本地，不含推送 / PR / 合并）
+#
+# 顺序即安全闸门：定位 → 干净性 → 已合并进 origin/<默认分支> → 移除 worktree → 删分支。
+# 任一闸门不过就停下报告，绝不丢弃任何一方（C3：不用 remove --force、不用 branch -D）。
+#
+# 已合并判定只读本地的 origin/<默认分支> 引用，不 fetch：远端刚合并而本地未 fetch 时
+# 会判为「未合并」而拒绝——偏保守，且离线可用。
+# 空的父目录 .iloop-worktrees/<repo> 保留，不递归删除（C3）。
+# ---------------------------------------------------------------------------
+cmd_workspace_finish() {
+  local num="$1"
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    log_error "当前不在 git 工作树内，无法清理工作区。"
+    exit 1
+  fi
+  if ! valid_issue_num "${num}"; then
+    log_error "Issue 编号必须是正整数（收到：'${num:-<空>}'）。"
+    exit 1
+  fi
+
+  local branch="${BRANCH_PREFIX}/${num}"
+  if ! git show-ref --verify --quiet "refs/heads/${branch}"; then
+    log_error "分支 ${branch} 不存在——Issue #${num} 没有可清理的本地工作区。"
+    log_error "现有工作区："
+    git worktree list | sed 's/^/  /' >&2
+    exit 1
+  fi
+
+  # 分支可能没绑任何 worktree（例如上次创建中断的残留），此时跳过移除只删分支。
+  local wt dirty db
+  wt="$(worktree_of_branch "${branch}")"
+
+  if [[ -n "${wt}" ]]; then
+    dirty="$(git -C "${wt}" status --porcelain)"
+    if [[ -n "${dirty}" ]]; then
+      log_error "工作区有未提交改动，拒绝清理（不丢弃任何一方）：${wt}"
+      printf '%s\n' "${dirty}" | sed 's/^/  /' >&2
+      log_error "请先提交，或人工处置这些改动后重试。"
+      exit 1
+    fi
+  fi
+
+  if ! db="$(default_branch_local)"; then
+    log_error "无法本地探测默认分支（origin/HEAD 缺失），无法确认 ${branch} 是否已合并。"
+    log_error "无法确认时本脚本不会删除工作区。请先执行：git remote set-head origin -a"
+    exit 1
+  fi
+  if ! git rev-parse --verify -q "refs/remotes/origin/${db}" >/dev/null 2>&1; then
+    log_error "本地不存在 origin/${db} 引用，无法确认 ${branch} 是否已合并。"
+    log_error "无法确认时本脚本不会删除工作区。请先执行：git fetch origin ${db}"
+    exit 1
+  fi
+  if ! git merge-base --is-ancestor "${branch}" "origin/${db}"; then
+    log_error "${branch} 尚未合并进 origin/${db}，拒绝清理（会丢失未集成的工作）。"
+    log_error "请先完成集成（推送分支 + 开 PR + 合并，集成契约见 #25），再回来清理。"
+    log_error "未合并的提交："
+    git log --oneline "origin/${db}..${branch}" | sed 's/^/  /' >&2
+    exit 1
+  fi
+
+  if [[ -n "${wt}" ]]; then
+    if ! git worktree remove "${wt}"; then
+      log_error "git worktree remove 失败：${wt}"
+      exit 1
+    fi
+    log_info "已移除工作区：${wt}"
+  else
+    log_info "分支 ${branch} 未绑定任何 worktree（疑似上次创建中断的残留），跳过移除。"
+  fi
+
+  if ! git branch -d "${branch}"; then
+    log_error "git branch -d ${branch} 失败（分支未合并或仍被占用）。"
+    exit 1
+  fi
+  log_info "已删除分支：${branch}"
+  log_info "Issue #${num} 的本地工作区清理完毕；空的父目录按约定保留。"
+}
+
 # ---------------------------------------------------------------------------
 # 参数路由（主入口）
 # ---------------------------------------------------------------------------
@@ -1885,6 +1983,10 @@ main() {
           # 编号与 --base 的校验在 cmd_workspace_start 内完成（需要给出精确错误文案）
           [[ $# -ge 1 ]] || usage
           cmd_workspace_start "$@"
+          ;;
+        finish)
+          [[ $# -eq 1 ]] || usage
+          cmd_workspace_finish "$1"
           ;;
         *)
           usage
