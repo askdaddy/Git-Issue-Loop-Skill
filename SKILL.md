@@ -56,14 +56,16 @@ description: >-
 6. **优先级与状态标签必须用平台原生 label 能力表达，禁止写进 Issue 标题**；优先级、状态、重试计数三族标签各自**排他**（同时只能存在一个，详见 §1.2）。
 7. 上述权限由 `git-ops.sh --role <角色>` 在脚本层硬性强制，Agent 不得以任何方式绕过。
 8. **Issue 操作必须优先使用本地官方 CLI**（GitHub→`gh`，GitLab→`glab`，Gitea/Forgejo→`tea`），由 `git-ops.sh` 自动路由；**禁止**改用 REST API + 手写 token、网页点击或其他绕行方式。本地缺 CLI 或未授权时，**必须停下来把安装/授权指南交给用户**，不得代填凭据、不得跳过 Issue 写回步骤。
-9. **提交前必须执行 `./scripts/git-ops.sh guard <当前角色>`，越界即 T0 事故**：脚本以 `git status --porcelain` 比对角色可写区域白名单（PM=`docs/`；开发=除 `test/` 与 `docs/` 外全部，但放行 `docs/issues/<N>/plan.md`；QA=`test/` 与 `docs/issues/<N>/verify-report.md`），命中越界路径即 `exit 1`，必须修正后再提交。**能力边界（如实声明）**：`guard` 只能校验「区域级越界」（文件落在哪个目录），**无法**校验「是否超出 `plan.md` 范围」——后者仍依赖角色自律与 [R] 审查阶段的越界判定。
+9. **提交前必须执行 `./scripts/git-ops.sh guard <当前角色> <N>`，越界即 T0 事故**：脚本以 `git status --porcelain` 比对角色可写区域白名单（PM=`docs/`；开发=除 `test/` 与 `docs/` 外全部，但放行 `docs/issues/<N>/plan.md`；QA=`test/` 与 `docs/issues/<N>/verify-report.md`），命中越界路径即 `exit 1`，必须修正后再提交。`<N>` 为当前 Issue 编号：给出后脚本会额外校验当前分支是否为 `riper/<N>`，不一致即 `exit 1`（防止把改动提交到别的 Issue 的工作区）；分支非 `riper/*` 形态时只提示不失败。**能力边界（如实声明）**：`guard` 只能校验「区域级越界」（文件落在哪个目录），**无法**校验「是否超出 `plan.md` 范围」——后者仍依赖角色自律与 [R] 审查阶段的越界判定。此外 `guard` 取的是 cwd 全量变更，多会话共用主工作树时可能把别人的改动算到本角色头上，脚本会额外打印一段并行污染诊断并指向 `workspace start <N>`（诊断不改变判定与 exit code）。
 
 ## 0. 核心约定
 
 - **唯一事实来源**：Issue（正文 + 评论 + 标签）为主；本地 `docs/issues/<N>/` 仅为**降级 fallback，不是持久化副本**——远程可用时不得双写。
 - **降级落盘位置**：`docs/issues/<N>/`（spec.md / design.md / plan.md / verify-report.md），基于 `templates/` 填充，仅当远程 Issue 不可用时使用；用户显性指定时以用户为准。
 - **测试脚本位置**：QA 的黑盒测试脚本默认落 `test/`；用户显性指定时以用户为准。
-- **Git 操作**：一律通过 `scripts/git-ops.sh` 执行，禁止直接调用 `gh` / `glab` / `tea`。Agent 调用时**必须携带 `--role <当前角色>`**，脚本按 §1.1 权限矩阵与 §1.2 标签体系硬性校验。子命令清单：`issue list|get|comment|create|close|reopen|priority|status|retry|label`、`labels init`、`guard <role>`、`platform`、`doctor`。
+- **Git 操作**：一律通过 `scripts/git-ops.sh` 执行，禁止直接调用 `gh` / `glab` / `tea`。Agent 调用时**必须携带 `--role <当前角色>`**，脚本按 §1.1 权限矩阵与 §1.2 标签体系硬性校验。子命令清单：`issue list|get|comment|create|close|reopen|priority|status|retry|label`、`labels init`、`guard <role> [N]`、`workspace status|start|finish`、`platform`、`doctor`。
+- **工作区隔离（并行会话必须遵守）**：一 Issue 一 worktree 一分支。开工前先 `./scripts/git-ops.sh workspace start <N>`，脚本会在**仓库外** `../.iloop-worktrees/<repo>/<N>` 建 worktree 并挂 `riper/<N>` 分支。基分支恒为 `origin/<默认分支>`，**不基于本地分支**——本地分支可能带着别的会话尚未推送的提交。已经在 linked worktree 内时**不嵌套创建**，只把当前工作区规范化到 `riper/<N>`（detached HEAD 就地挂分支并保留原提交）。收尾用 `workspace finish <N>`（仅当工作区干净且已合并进 `origin/<默认分支>`，否则拒绝清理）；推送 / PR / 合并属集成阶段，不在本命令内。
+- **cwd 会被宿主重置**：`workspace start` 输出的是 worktree 的**绝对路径**，宿主可能在每次工具调用后把 cwd 重置回会话起点。故后续所有仓库内命令都必须以该绝对路径为 cwd（`cd <绝对路径> && …` 前缀，或使用工具自带的工作目录参数），**不得假设 cwd 会延续**；不确定时先跑 `./scripts/git-ops.sh workspace status` 确认自己在哪个工作树、哪条分支、归属哪个 Issue。
 - **平台路由**：脚本通过 `git remote -v` 自动检测并路由到对应 CLI，Agent 无需关心托管平台差异。
 - **前置自检**：进入循环前先跑 `./scripts/git-ops.sh doctor`（检查运行环境 + CLI 安装 + 授权状态）。不就绪时脚本会输出安装/授权指南并 `exit 1`，Agent 必须中止循环、把指南**原样呈现给用户**，待用户完成后重跑 `doctor` 再继续；完整指南见 `references/cli-setup.md`。
 - **凭据安全**：禁止代用户输入 token，禁止将凭据写入仓库文件、脚本、`.env` 或提交到版本库。
@@ -325,7 +327,7 @@ Issue(编号 N)
    - HOW 按梯子取更高 rung；因复用/标准库/原生/已装依赖/一行而改道时，评论 `步骤 N: skipped: …, used: …, add when: …`；
    - 遵守 SDD 原则：发现计划有误（含想砍掉本步需求）→ 中断 → 回退 Plan 阶段（PM 修订）→ 再继续；
    - 遭遇无法推进的阻塞 → `./scripts/git-ops.sh --role developer issue status <N> riper-blocked` 并评论说明。
-4. 按仓库既有规范提交代码，提交信息引用 Issue 编号（如 `... (#N)`）。
+4. 按仓库既有规范提交代码，提交信息引用 Issue 编号（如 `... (#N)`）。**代码必须提交到本 Issue 的 `riper/<N>` 分支，不得提交到默认分支**（见 §0 工作区隔离）；提交前跑 `./scripts/git-ops.sh --role developer guard developer <N>`，它会同时校验可写区域与「当前分支是否就是 `riper/<N>`」。
 5. 交付审查：`./scripts/git-ops.sh --role developer issue status <N> riper-review`。
 
 ### 3.6 [R] 审查阶段（Review）— QA
@@ -371,7 +373,10 @@ Issue(编号 N)
 ./scripts/git-ops.sh issue list [--state open|closed|all] [--status <riper-*>] [--priority <p0..p3>]
                                                                   → 列出 Issue，按优先级 p0→p3 排序（glab/tea 无标签列时降级）
 ./scripts/git-ops.sh --role reviewer issue retry <N> <incr|get|reset> → 重试计数持久化（incr 仅 QA；get/reset 不限角色）
-./scripts/git-ops.sh guard <role>                                 → 可写区域越界自检（提交前必跑；越界 exit 1）
+./scripts/git-ops.sh guard <role> [N]                             → 可写区域越界自检（提交前必跑；越界 exit 1；给出 N 则同时校验当前分支是否为 riper/<N>）
+./scripts/git-ops.sh workspace status                             → 报告当前在哪个工作树/分支、归属哪个 Issue、worktree 清单（只读，随时可跑）
+./scripts/git-ops.sh workspace start <N>                          → 为 Issue N 建隔离工作区：仓库外 ../.iloop-worktrees/<repo>/<N> + riper/<N> 分支，基于 origin/<默认分支>
+./scripts/git-ops.sh workspace finish <N>                         → 清理 Issue N 的本地工作区（仅当干净且已合并进上游；不推送、不合并）
 ./scripts/git-ops.sh doctor                                       → 环境 + CLI + 授权 + 标签体系就绪自检
 ```
 
