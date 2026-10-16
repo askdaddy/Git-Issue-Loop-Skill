@@ -114,7 +114,9 @@ assert_no_grep "$CLI_SETUP" '回退到 gh|盲选' "no '回退到 gh'/'盲选' in
 assert_grep "$CLI_SETUP" '授权注册表|自建实例' "cli-setup.md documents self-hosted registry routing"
 
 echo "=== out of scope: the layered-detection fix is in the committed blob ==="
-if git -C "$ROOT" show HEAD:scripts/git-ops.sh | grep -q 'detect_by_registry'; then
+# Not `grep -q`: under `set -o pipefail` it exits on first match, `git show` then dies
+# of SIGPIPE and the pipeline reports 141, turning a match into a false negative.
+if git -C "$ROOT" show HEAD:scripts/git-ops.sh | grep 'detect_by_registry' >/dev/null; then
   echo "PASS HEAD blob of git-ops.sh carries detect_by_registry"
 else
   echo "FAIL HEAD blob of git-ops.sh lacks detect_by_registry"
