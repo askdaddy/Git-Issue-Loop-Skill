@@ -1965,8 +1965,16 @@ cmd_workspace_finish() {
     log_info "分支 ${branch} 未绑定任何 worktree（疑似上次创建中断的残留），跳过移除。"
   fi
 
-  if ! git branch -d "${branch}"; then
-    log_error "git branch -d ${branch} 失败（分支未合并或仍被占用）。"
+  # advice.forceDeleteBranch=false：git 默认会在拒绝 -d 时附一句「run 'git branch -D …'」，
+  # 那等于本工具在建议破坏性命令（C2/C3 禁止）。用 per-invocation 的 -c 关掉，不改用户配置；
+  # 真实原因（error: … is not fully merged）仍然照常输出。老版本 git 无此 advice 键时无害。
+  if ! git -c advice.forceDeleteBranch=false branch -d "${branch}"; then
+    # 不猜测原因：走到这里时「已合并进 origin/<默认分支>」的闸门已经通过，
+    # 失败原因只可能来自 git 自己的判定（HEAD 不含它且无 upstream、被别的 worktree 占用等），
+    # git 的 stderr 未重定向、已直接可见，叠加一句硬编码归因只会把人引向错方向。
+    log_error "git branch -d ${branch} 失败，原因见 git 在上面给出的输出。"
+    log_error "此时工作区目录已移除、分支 ${branch} 仍在，处于半途状态。"
+    log_error "请按 git 的原因人工处置后补删分支：git branch -d ${branch}"
     exit 1
   fi
   log_info "已删除分支：${branch}"
