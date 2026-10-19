@@ -4,6 +4,93 @@ All notable changes to stable `iloop` releases are recorded here. Releases use
 immutable `vX.Y.Z` tags; installation follows the highest stable tag rather
 than `main`.
 
+## [0.6.6] - 2026-10-19
+
+### Added
+
+- Per-Issue workspace isolation for parallel sessions. A branch alone is not
+  isolation: two sessions in one clone share a single HEAD and `.git/index.lock`,
+  so `git checkout` by one is global to the other. `workspace start <N>` now
+  builds a real `git worktree` outside the repository at
+  `../.iloop-worktrees/<repo>/<N>` on a `riper/<N>` branch.
+- The baseline is always `origin/<default branch>`, never a local branch, so a
+  session cannot silently inherit another session's unpushed commits. When the
+  default branch cannot be resolved the command stops and asks for `--base`
+  instead of falling back.
+- `workspace status` reports, read-only and offline, which work tree and branch
+  you are in, which Issue it belongs to, how far it is from the upstream
+  baseline, and the full worktree list.
+- Inside a linked worktree `workspace start <N>` never nests. It normalizes
+  instead: idempotent when already on `riper/<N>`, refused when the work tree
+  belongs to another Issue, and for a detached HEAD left behind by a host it
+  attaches `riper/<N>` in place, preserving every existing commit and stating
+  that the baseline is that commit rather than the upstream.
+- `workspace finish <N>` cleans up locally behind three gates — clean, verifiable,
+  and already merged into `origin/<default branch>` — and refuses rather than
+  discards work when any gate fails. It never uses `worktree remove --force` or
+  `branch -D`, and keeps the empty parent directory.
+- `guard <role> <N>` optionally verifies that the current branch really is
+  `riper/<N>`, so a change cannot be committed into another Issue's work tree.
+  Omitting `<N>` keeps the previous behavior byte for byte.
+- `guard` now prints a parallel-pollution diagnostic when it runs in the primary
+  work tree with pending changes, pointing at `workspace start <N>`. The
+  diagnostic never alters the verdict or the exit code.
+
+### Fixed
+
+- `check-update.sh` now surfaces git's own failure cause and the locally
+  installed `local_ref` when the update check fails, and `SKILL.md` requires the
+  Agent to relay both and say plainly that the version could not be confirmed,
+  instead of reporting a bare "update check failed".
+- `workspace finish <N>` survived being run from inside the very work tree it
+  removes. git does not refuse to delete the work tree you are standing in: it
+  deletes it, and the following `git branch -d` then dies on the vanished working
+  directory, leaving a half-finished state plus an error blaming the merge status.
+  The command now moves to the primary work tree before removing anything, so the
+  working directory stays valid, and tells a stranded shell where to `cd` back.
+- `git branch -d` failures no longer assert an unverified cause. The message
+  states which command and branch failed, leaves git's own reason visible, admits
+  the half-finished state, and gives a `-d` recovery command. The tool also no
+  longer relays git's `branch -D` hint, since it must never recommend a
+  destructive command.
+
+### Tested
+
+- Added `test/iloop-workspace-isolation-invariants.sh`, a black-box suite of 99
+  assertions covering `workspace status|start|finish`, the guard diagnostic, and
+  the Issue-number check. Every worktree and branch scenario is built inside a
+  throwaway fixture whose `origin` is a local bare repository: no network, no
+  change to the real repository, no residue. It also passes when run from inside a
+  target work tree, which is the case the original gap hid behind.
+- Removed eleven working-tree-coupled guards across the suite. Each asserted
+  `git diff HEAD -- <path>` was empty, which only ever sees uncommitted edits and
+  never the commit set, so the scope claims they advertised never held. Their real
+  effect was to fail the suite whenever anyone had work in progress, which made
+  "test before committing" impossible. Three files that already grepped
+  `scripts/git-ops.sh` now assert the same pattern against the committed blob
+  instead; the other eight were deleted with every genuine assertion kept.
+  Counter-proofs confirm the suites still fail when the code they cover breaks.
+- Avoided a SIGPIPE false negative in the new committed-blob guards: `grep -q`
+  exits on first match, so under `pipefail` `git show` dies of SIGPIPE and the
+  pipeline reports 141, reading a present pattern as absent.
+
+### Documentation
+
+- `SKILL.md` gained two §0 conventions — workspace isolation, and the fact that
+  the host resets the working directory between calls so every command must carry
+  an absolute path — plus the Issue-numbered `guard` form in T0 rule 9 and the
+  `riper/<N>` commit requirement in the [E] phase.
+- All three role files now open their required-actions list with a workspace
+  prerequisite, and state that `workspace` is environment-level and role-agnostic
+  but never exempts anyone from `guard`.
+- Documented workspace isolation in `README.md` and `README_CN.md`, and corrected
+  both to the actual number of invariant suites under `test/`.
+
+Issues: [#23](https://github.com/askdaddy/Git-Issue-Loop-Skill/issues/23),
+[#30](https://github.com/askdaddy/Git-Issue-Loop-Skill/issues/30),
+[#31](https://github.com/askdaddy/Git-Issue-Loop-Skill/issues/31)
+Pull request: [#29](https://github.com/askdaddy/Git-Issue-Loop-Skill/pull/29)
+
 ## [0.6.5] - 2026-09-28
 
 ### Fixed
@@ -32,3 +119,4 @@ than `main`.
 Issue: [#22](https://github.com/askdaddy/Git-Issue-Loop-Skill/issues/22)
 
 [0.6.5]: https://github.com/askdaddy/Git-Issue-Loop-Skill/compare/v0.6.4...v0.6.5
+[0.6.6]: https://github.com/askdaddy/Git-Issue-Loop-Skill/compare/v0.6.5...v0.6.6
