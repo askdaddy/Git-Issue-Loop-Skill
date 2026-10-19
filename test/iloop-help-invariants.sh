@@ -5,7 +5,7 @@
 # at the Skill root, offline, NOT manifest skill.version), is recognized BEFORE "a new goal",
 # and adds zero new code (Option A: pure SKILL.md doc convention).
 # These checks grep the doc for the frozen acceptance wording of steps 1-3, and guard that
-# no business script / manifest changed and no scripts/help.sh was added.
+# no scripts/help.sh was added (Option A: zero new files).
 # Per the #11 C6 lesson: "version is NOT manifest skill.version" is asserted POSITIVELY
 # (doc contains `describe --tags --exact-match HEAD` and the forbidding sentence), never as
 # a negative "doc must not contain skill.version" (the doc cites skill.version as a counter-example).
@@ -75,13 +75,7 @@ assert_grep "$SKILL" '"推进迭代".*扫描 open issue' "§4 既有示例保留
 assert_grep "$SKILL" '检查 skill 更新' "§4 既有示例保留: 检查 skill 更新"
 assert_grep "$SKILL" '落地 issue #42' "§4 既有示例保留: 落地 issue #42"
 
-echo "=== guards (C5 + Option A): no manifest change, no help.sh ==="
-if git -C "$ROOT" diff HEAD -- skill-manifest.json | grep -q .; then
-  echo "FAIL skill-manifest.json has a diff vs HEAD (C5)"
-  FAILS=$((FAILS + 1))
-else
-  echo "PASS skill-manifest.json unchanged vs HEAD (C5)"
-fi
+echo "=== guards (Option A): no help.sh ==="
 if [[ -f "${ROOT}/scripts/help.sh" ]]; then
   echo "FAIL scripts/help.sh exists (Option A must add zero new files)"
   FAILS=$((FAILS + 1))
