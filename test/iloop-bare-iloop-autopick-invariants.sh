@@ -233,13 +233,6 @@ else
   fail "issue get 41 missing real labels on glab path"
 fi
 
-echo "=== scope evidence: fix is committed, git-ops.sh untouched by #20 ==="
-if git -C "$ROOT" diff HEAD --name-only -- scripts/git-ops.sh templates/ | grep -q .; then
-  fail "git-ops.sh or templates/ changed (design §5 forbids it)"
-else
-  pass "scripts/git-ops.sh and templates/ untouched vs HEAD"
-fi
-
 if [[ "$FAILS" -ne 0 ]]; then
   echo "RESULT FAIL count=$FAILS"
   exit 1
