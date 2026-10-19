@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "skill": {
     "name": "iloop",
-    "version": "0.6.5",
+    "version": "0.6.6",
     "entry": "SKILL.md",
     "requiredPaths": [
       "SKILL.md",

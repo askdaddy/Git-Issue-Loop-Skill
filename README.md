@@ -47,7 +47,17 @@ CLIs: `gh`, `glab`, and `tea`.
 - `scripts/git-ops.sh`, which detects the hosting platform from `git remote`,
   routes to the official CLI, enforces per-role Issue permissions, and refuses to
   fall back to REST APIs or hand-entered credentials.
-- 13 black-box invariant suites under `test/` that drive stub `gh` / `glab` /
+- Per-Issue workspace isolation for parallel sessions. A branch alone is not
+  isolation: sessions sharing one clone share a single HEAD and index lock.
+  `workspace start <N>` therefore builds a real `git worktree` outside the
+  repository at `../.iloop-worktrees/<repo>/<N>`, on a `riper/<N>` branch based
+  on `origin/<default branch>` and never on a local branch, so a session cannot
+  inherit another session's unpushed commits. `workspace status` reports which
+  work tree, branch, and Issue you are in; `workspace finish <N>` cleans up only
+  once the work is clean and already merged upstream, and refuses rather than
+  discards work otherwise; `guard <role> <N>` additionally verifies that the
+  current branch really is `riper/<N>`.
+- 15 black-box invariant suites under `test/` that drive stub `gh` / `glab` /
   `tea` binaries in throwaway repositories.
 
 ## Install the latest stable release
