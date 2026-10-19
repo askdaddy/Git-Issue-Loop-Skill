@@ -366,6 +366,61 @@ else
 fi
 
 #############################################################################
+echo "=== issue #30: workspace finish called from inside the target worktree ==="
+
+# git does not refuse to remove the worktree you are standing in: it removes it, and
+# the next git call then dies on a vanished cwd. Every finish call above runs from
+# $REPO, which is exactly why that shipped unnoticed. These cases call it from inside.
+
+# A freshly started worktree sits at origin/main with no commits of its own, so it is
+# trivially "merged" and clean -- no merge/push dance needed to reach the removal path.
+run "$REPO" workspace start 141
+WT141="$WTROOT/141"
+chk "$RC" "issue30 precondition: start 141 exits 0 (rc=$RC)"
+
+run "$WT141" workspace finish 141
+chk "$RC" "issue30-AC1 finish from inside the target worktree exits 0 (rc=$RC)"
+[[ ! -d "$WT141" ]] && pass "issue30-AC1 worktree directory removed" \
+  || fail "issue30-AC1 worktree directory still there"
+if git -C "$REPO" worktree list | grep -qF "$WT141"; then
+  fail "issue30-AC1 worktree still listed"
+else
+  pass "issue30-AC1 worktree no longer listed"
+fi
+[[ -z "$(git -C "$REPO" branch --list 'riper/141')" ]] \
+  && pass "issue30-AC1 branch riper/141 deleted (not left half-finished)" \
+  || fail "issue30-AC1 branch riper/141 survived -- finish stopped halfway"
+[[ -d "$WTROOT" ]] && pass "issue30-AC1 parent directory kept" \
+  || fail "issue30-AC1 parent directory was deleted"
+has "cd $PRIM" && pass "issue30-AC4 the stranded-shell hint names the primary worktree path" \
+  || fail "issue30-AC4 no cd hint after removing the caller's own directory"
+
+# Same, but invoked from a subdirectory of the worktree.
+run "$REPO" workspace start 142
+WT142="$WTROOT/142"
+mkdir -p "$WT142/sub"
+run "$WT142/sub" workspace finish 142
+chk "$RC" "issue30-AC2 finish from a subdirectory of the worktree exits 0 (rc=$RC)"
+[[ ! -d "$WT142" ]] && pass "issue30-AC2 worktree directory removed" \
+  || fail "issue30-AC2 worktree directory still there"
+[[ -z "$(git -C "$REPO" branch --list 'riper/142')" ]] \
+  && pass "issue30-AC2 branch riper/142 deleted" || fail "issue30-AC2 branch riper/142 survived"
+has "cd $PRIM" && pass "issue30-AC2 subdirectory caller also gets the cd hint" \
+  || fail "issue30-AC2 no cd hint for a subdirectory caller"
+
+# From the primary worktree the hint must stay quiet -- otherwise it is pure noise.
+run "$REPO" workspace start 143
+run "$REPO" workspace finish 143
+chk "$RC" "issue30-AC3 finish from the primary worktree still exits 0 (rc=$RC)"
+[[ ! -d "$WTROOT/143" ]] && pass "issue30-AC3 worktree directory removed" \
+  || fail "issue30-AC3 worktree directory still there"
+if has "cd $PRIM"; then
+  fail "issue30-AC3 the stranded-shell hint fired for a primary-worktree caller"
+else
+  pass "issue30-AC3 no cd hint when the caller was never inside the removed directory"
+fi
+
+#############################################################################
 echo "=== step 5: guard parallel-pollution diagnostic (AC1/2/4) ==="
 
 echo x > "$REPO/scripts/violation.tmp"
