@@ -253,12 +253,15 @@ else
   fail "detect_platform registry probe is not using the #16 read-all form"
 fi
 
-# Syntax + committed.
+# Syntax + the #16 read-all registry probe is present in the committed blob, so the
+# assertions above cannot be satisfied by an edit that was never committed.
+# Not `grep -q`: under `set -o pipefail` it exits on first match, `git show` then dies
+# of SIGPIPE and the pipeline reports 141, turning a match into a false negative.
 if bash -n "$GITOPS"; then pass "bash -n scripts/git-ops.sh OK"; else fail "bash -n failed"; fi
-if git -C "$ROOT" diff HEAD -- scripts/git-ops.sh | grep -q .; then
-  fail "scripts/git-ops.sh has uncommitted diff"
+if git -C "$ROOT" show HEAD:scripts/git-ops.sh | grep 'tea login list 2>/dev/null | grep -F -- "${host}" >/dev/null' >/dev/null; then
+  pass "HEAD blob of git-ops.sh carries the #16 read-all registry probe"
 else
-  pass "git-ops.sh clean vs HEAD (fix committed)"
+  fail "HEAD blob of git-ops.sh lacks the #16 read-all registry probe"
 fi
 
 if [[ "$FAILS" -ne 0 ]]; then

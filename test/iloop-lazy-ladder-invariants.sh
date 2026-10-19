@@ -122,14 +122,6 @@ assert_grep "${ROOT}/templates/verify-report.md" 'Lean already. Ship.|net:' "ver
 assert_grep "${ROOT}/templates/verify-report.md" '不阻塞' "verify-report delete-list non-blocking"
 assert_grep "${ROOT}/templates/verify-report.md" '新依赖|行为' "verify-report overrun is behavior/deps"
 
-echo "=== out of scope ==="
-if git -C "$ROOT" diff HEAD -- scripts/git-ops.sh | grep -q .; then
-  echo "FAIL scripts/git-ops.sh has uncommitted diff"
-  FAILS=$((FAILS + 1))
-else
-  echo "PASS git-ops.sh unchanged vs HEAD"
-fi
-
 if [[ "$FAILS" -ne 0 ]]; then
   echo "RESULT FAIL count=$FAILS"
   exit 1

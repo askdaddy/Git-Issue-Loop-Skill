@@ -165,11 +165,13 @@ else
   fail "git-ops.sh does not use --unlabel"
 fi
 
-echo "=== out of scope: fix is committed (no uncommitted diff on git-ops.sh) ==="
-if git -C "$ROOT" diff HEAD -- scripts/git-ops.sh | grep -q .; then
-  fail "scripts/git-ops.sh has uncommitted diff"
+echo "=== out of scope: the --unlabel fix is in the committed blob ==="
+# Not `grep -q`: under `set -o pipefail` it exits on first match, `git show` then dies
+# of SIGPIPE and the pipeline reports 141, turning a match into a false negative.
+if git -C "$ROOT" show HEAD:scripts/git-ops.sh | grep -- '--unlabel' >/dev/null; then
+  pass "HEAD blob of git-ops.sh uses the official --unlabel flag"
 else
-  pass "git-ops.sh clean vs HEAD"
+  fail "HEAD blob of git-ops.sh does not use --unlabel"
 fi
 
 if [[ "$FAILS" -ne 0 ]]; then

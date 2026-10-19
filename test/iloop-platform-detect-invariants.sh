@@ -113,12 +113,14 @@ assert_no_grep "$GITOPS" '盲选' "no '盲选' phrasing left in git-ops.sh"
 assert_no_grep "$CLI_SETUP" '回退到 gh|盲选' "no '回退到 gh'/'盲选' in cli-setup.md"
 assert_grep "$CLI_SETUP" '授权注册表|自建实例' "cli-setup.md documents self-hosted registry routing"
 
-echo "=== out of scope: fix is committed (no uncommitted diff on git-ops.sh) ==="
-if git -C "$ROOT" diff HEAD -- scripts/git-ops.sh | grep -q .; then
-  echo "FAIL scripts/git-ops.sh has uncommitted diff"
-  FAILS=$((FAILS + 1))
+echo "=== out of scope: the layered-detection fix is in the committed blob ==="
+# Not `grep -q`: under `set -o pipefail` it exits on first match, `git show` then dies
+# of SIGPIPE and the pipeline reports 141, turning a match into a false negative.
+if git -C "$ROOT" show HEAD:scripts/git-ops.sh | grep 'detect_by_registry' >/dev/null; then
+  echo "PASS HEAD blob of git-ops.sh carries detect_by_registry"
 else
-  echo "PASS git-ops.sh clean vs HEAD"
+  echo "FAIL HEAD blob of git-ops.sh lacks detect_by_registry"
+  FAILS=$((FAILS + 1))
 fi
 
 if [[ "$FAILS" -ne 0 ]]; then

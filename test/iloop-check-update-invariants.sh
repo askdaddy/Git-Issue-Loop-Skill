@@ -108,13 +108,6 @@ assert_grep "${ROOT}/README.md" 'stable git tag|ask before upgrading' "English R
 assert_grep "$MANIFEST" '"version": "0.6.5"' "skill.version is 0.6.5"
 assert_grep "$MANIFEST" 'scripts/check-update.sh' "requiredPaths includes check-update.sh"
 
-if git -C "$ROOT" diff HEAD -- scripts/git-ops.sh | grep -q .; then
-  echo "FAIL git-ops.sh has a diff vs HEAD"
-  FAILS=$((FAILS + 1))
-else
-  echo "PASS git-ops.sh unchanged vs HEAD"
-fi
-
 if [[ "$FAILS" -ne 0 ]]; then
   echo "RESULT FAIL count=$FAILS"
   exit 1

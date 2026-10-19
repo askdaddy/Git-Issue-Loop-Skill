@@ -30,6 +30,8 @@
 
 ### 必须做
 
+**工作区前置（开工第一件事）**：验收要在开发留下的那个工作区里做——先跑 `./scripts/git-ops.sh workspace status` 找到 Issue `<N>` 的 per-Issue worktree 路径（分支 `riper/<N>`，位于仓库外 `../.iloop-worktrees/<repo>/<N>`），`cd` 进去再动手，**禁止在主工作树直接改文件**：主工作树被所有会话共享，你新写的 `test/` 脚本会和别人的改动混在一起，`guard` 也会把别人的改动算成你的越界。该 worktree 不存在时才 `workspace start <N>`；若 `riper/<N>` 分支已存在而工作区找不到，`workspace start <N>` 会拒绝并提示人工确认——那是互斥信号，不是故障。`workspace` 属环境级操作、不限角色，但**不豁免** `guard`。
+
 1. **逐条对照 `plan.md` 的验收标准**：每个步骤都要实际验证（跑测试、读代码、执行命令），逐项填写 `verify-report.md`，判定 PASS / FAIL。
 2. **以黑盒方式验证优先**：能站在用户/调用方视角验证的，就不要钻实现细节；实现细节只在黑盒无法覆盖时作为补充证据（只读）。
 3. **验证方式必须独立复现**：不能采信开发的自述；测试要自己跑，代码要自己读。
@@ -37,7 +39,7 @@
 5. **产出可删清单**（只读 diff）：一行一条 `<file>:L<line>: <tag> <what>. <replacement>.`，标签为 `delete:` / `stdlib:` / `native:` / `yagni:` / `shrink:`，结尾 `net: -<N> lines possible.` 或 `Lean already. Ship.`。放入附加检查，**不单独 FAIL、不阻塞判定、不计入重试**。
 6. FAIL 时必须做**失败原因分析**，并按根因分类：计划缺陷（退回 PM）/ 实现缺陷（退回执行）/ 环境问题（说明阻塞点）。
 7. **FAIL 退回前登记重试计数**：执行 `./scripts/git-ops.sh --role reviewer issue retry <N> incr`（排他，防死循环）；若 `issue retry <N> get` 已返回 `3`，改判 `riper-blocked` 等待人工介入，不再 incr。
-8. **交付验收报告前跑 `guard reviewer`**：执行 `./scripts/git-ops.sh guard reviewer` 确认无越界（可写区域仅 `test/` 与 `docs/issues/<N>/verify-report.md`），exit 0 方可交付。
+8. **交付验收报告前跑 `guard reviewer <N>`**：执行 `./scripts/git-ops.sh guard reviewer <N>` 确认无越界（可写区域仅 `test/` 与 `docs/issues/<N>/verify-report.md`，`<N>` 还会校验当前分支是否为 `riper/<N>`），exit 0 方可交付。
 
 ### 禁止做
 
@@ -57,7 +59,7 @@
 - **可添加自由标签**：便于上下文召回，如 `type/bug`、`area/cli`。
 - **可关闭 / 重开**：**闭环终点的关闭权专属本角色**——仅在全部 PASS、状态已切为 `riper-verified` 且总结评论写回后才允许关闭；FAIL 轮次中禁止关闭。重开仅用于纠正误关。
 - **CLI 优先**：所有 Issue 操作必须经 `git-ops.sh` 走本地官方 CLI（GitHub→gh / GitLab→glab / Gitea→tea）；若 CLI 缺失或未授权，立即停止并把安装/授权指南交给用户，**禁止改用 REST API / 网页 / 代填凭据绕行**。
-- **交付验收报告前自检**：跑 `./scripts/git-ops.sh guard reviewer`，QA 的可写区域**仅 `test/` 与 `docs/issues/<N>/verify-report.md`**；guard 报越界（exit 1）即 T0 事故，必须修正后再交付。
+- **交付验收报告前自检**：跑 `./scripts/git-ops.sh guard reviewer <N>`，QA 的可写区域**仅 `test/` 与 `docs/issues/<N>/verify-report.md`**；guard 报越界（exit 1）即 T0 事故，必须修正后再交付。
 
 > 以上权限由 `git-ops.sh --role reviewer` 在脚本层硬性强制，越权调用会直接报错。
 

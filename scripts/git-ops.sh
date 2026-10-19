@@ -22,7 +22,7 @@
 #
 #   完整子命令清单以 usage() 为唯一事实来源（不带参数运行 ./git-ops.sh 即打印）：
 #   issue list|get|comment|create|close|reopen|priority|status|retry|label、
-#   labels init、guard <role>、platform、doctor。
+#   labels init、guard <role> [num]、workspace status|start|finish、platform、doctor。
 #   排他语义：priority / status / retry 三族各自同时只保留一个标签，
 #   由脚本在写入时自动清理同族其他标签。
 #
@@ -97,7 +97,11 @@ Commands:
   git-ops.sh issue label <num> add <label>         添加自由标签（上下文召回用）
   git-ops.sh issue label <num> remove <label>      移除自由标签
   git-ops.sh labels init                            初始化标签体系（4 优先级 + 7 状态 + 3 重试，幂等）
-  git-ops.sh guard <role>                          可写区域越界自检（提交前必跑；role=planner|developer|reviewer）
+  git-ops.sh guard <role> [num]                    可写区域越界自检（提交前必跑；role=planner|developer|reviewer；
+                                                    num=Issue 编号，给出时额外校验当前分支是否为 riper/<num>）
+  git-ops.sh workspace status                       报告工作区隔离状态（主/linked、分支、归属 Issue、worktree 清单）
+  git-ops.sh workspace start <num> [--base <ref>]   为 Issue <num> 建立隔离工作区（仓库外 worktree + riper/<num> 分支，基于上游）
+  git-ops.sh workspace finish <num>                 清理 Issue <num> 的本地工作区（仅干净且已合并进上游时；不含推送/合并）
   git-ops.sh platform                               打印检测到的托管平台
   git-ops.sh doctor                                 自检：运行环境 → CLI 路由 → 安装 → 授权 → 14 个内置标签就绪
                                                     （任一项不就绪即输出指南并 exit 1）
@@ -1438,20 +1442,52 @@ cmd_doctor() {
 # 以 `git status --porcelain` 取全部变更（已暂存 + 未暂存 + 未跟踪；被 .gitignore
 # 忽略的天然不列出），逐个比对 role_writable_paths / path_writable 白名单。
 # 能力边界：只能校验「区域级越界」，无法校验「是否超出 plan 范围」（design 边界 4）。
-# 用法：cmd_guard <role>
+# 用法：cmd_guard <role> [Issue 编号]
+#   给出编号时额外校验当前分支是否为 riper/<该编号>；分支非 riper/* 形态只提示不失败。
 # ---------------------------------------------------------------------------
 cmd_guard() {
-  local role="$1"
+  local role="$1" num="${2:-}"
 
   # 校验目标角色合法性（非法角色 → exit 1）；guard 动作三角色均放行
   check_permission guard "${role}"
   role_writable_paths "${role}" >/dev/null
+
+  # Issue 号一致性校验放在这里而非 check_permission：后者在 ROLE 为空（未带 --role）
+  # 时会提前 return，校验不会执行，而 guard <role> <N> 必须无条件生效。
+  if [[ -n "${num}" ]]; then
+    if ! valid_issue_num "${num}"; then
+      log_error "guard：Issue 编号必须是正整数（收到：'${num}'）。"
+      exit 1
+    fi
+    local cur owner=""
+    cur="$(current_branch)" || true
+    if [[ -n "${cur}" ]]; then
+      owner="$(issue_of_branch "${cur}")" || true
+    fi
+    if [[ -n "${owner}" ]]; then
+      if [[ "${owner}" != "${num}" ]]; then
+        log_error "guard：当前分支 ${cur} 属 Issue #${owner}，与给定的 Issue #${num} 不一致。"
+        log_error "请切到 Issue #${num} 的工作区，或用正确编号：./scripts/git-ops.sh guard ${role} ${owner}"
+        exit 1
+      fi
+    else
+      log_info "提示：当前工作区不在 ${BRANCH_PREFIX}/<N> 分支上（${cur:-detached HEAD}），跳过 Issue 号一致性校验。"
+      log_info "      并行推进请先执行：./scripts/git-ops.sh workspace start ${num}"
+    fi
+  fi
 
   local changed
   changed="$(git status --porcelain)"
   if [[ -z "${changed}" ]]; then
     log_info "guard(${role}) 通过：无待检变更（工作区干净）。"
     return 0
+  fi
+
+  # 并行污染诊断：只在主工作树出现。多会话共用同一个主工作树时，下列变更可能来自
+  # 别的会话 / 别的 Issue，会被本自检当成本角色越界。纯提示，不影响判定与 exit code。
+  if ! is_linked_worktree; then
+    log_info "提示：当前在主工作树。若存在并行会话，下列变更可能不属于本角色 / 本 Issue，"
+    log_info "      并会让本自检把无辜的并行判成越界。并行推进请先执行：./scripts/git-ops.sh workspace start <N>"
   fi
 
   local total=0 violated=0 line path violations=""
@@ -1482,6 +1518,444 @@ EOF_STATUS
   log_error "角色 ${role} 的可写区域："
   role_writable_paths "${role}" >&2
   exit 1
+}
+
+# ---------------------------------------------------------------------------
+# 工作区隔离（git worktree / 分支）：多会话并行操作同一仓库时的物理隔离层
+#
+# 模型：一 Issue 一 worktree 一分支。分支名 riper/<N>（仅由 Issue 编号派生），
+# 基分支恒为 origin/<默认分支>（不基于本地分支，避免携带他人未推送的提交），
+# worktree 根在仓库外 ../.iloop-worktrees/<repo>/<N>（避免测试套件 glob/find
+# 误扫其他会话的文件）。
+#
+# 只依赖 git 内建子命令，不依赖平台 CLI，故本段一律不调用 require_cli ——
+# 无 CLI 授权的环境也能建工作区（与 doctor 的强授权要求解耦）。
+# 属环境级操作（同 doctor / labels init / platform），不做角色门控；
+# 但它不豁免 guard：guard 仍在提交前跑。
+#
+# 严禁破坏性命令：reset --hard / clean / checkout . / branch -D /
+# worktree remove --force。有未提交改动或未合并提交时一律停下报告，不丢弃任何一方。
+# ---------------------------------------------------------------------------
+
+WORKTREE_ROOT_NAME=".iloop-worktrees"
+BRANCH_PREFIX="riper"
+
+repo_toplevel() {
+  git rev-parse --show-toplevel
+}
+
+git_dir_abs() {
+  git rev-parse --absolute-git-dir
+}
+
+# 主仓库的 git dir（绝对路径）。--git-common-dir 的输出可能相对 cwd，故用 cd+pwd
+# 转绝对；不用 --path-format=absolute（需 git 2.31+，Apple git 未必满足）。
+# 必须用 pwd -P（物理路径）：git rev-parse --absolute-git-dir 返回物理解析结果，
+# 而裸 pwd 返回逻辑路径。macOS 上 /tmp -> /private/tmp 等符号链接会让两者字符串不等，
+# 导致 is_linked_worktree 把主工作树误判为 linked。
+git_common_dir_abs() {
+  local d
+  d="$(git rev-parse --git-common-dir)" || return 1
+  ( cd "${d}" && pwd -P )
+}
+
+# 主工作树根 = common git dir 的父目录。
+# lazy-ladder: 上限为标准布局 <root>/.git；GIT_DIR 被外部改写、submodule 或
+#              worktree-of-worktree 等非标准布局会算错，届时改读 common dir 下的
+#              worktrees 注册表。
+primary_toplevel() {
+  local gcd
+  gcd="$(git_common_dir_abs)" || return 1
+  dirname "${gcd}"
+}
+
+# 当前是否处于 linked worktree（而非主工作树）
+is_linked_worktree() {
+  local gd gcd
+  gd="$(git_dir_abs)" || return 1
+  gcd="$(git_common_dir_abs)" || return 1
+  [[ "${gd}" != "${gcd}" ]]
+}
+
+# 当前分支名；detached HEAD 时返回非 0
+current_branch() {
+  git symbolic-ref --short HEAD 2>/dev/null
+}
+
+# 默认分支（只读本地 ref，不联网）：origin/HEAD 由 git clone 设置
+default_branch_local() {
+  local ref
+  ref="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)" || return 1
+  [[ -n "${ref}" ]] || return 1
+  printf '%s\n' "${ref#origin/}"
+}
+
+# 默认分支（本地探测失败时联网问远端）。两者都失败返回非 0 —— 调用方必须停下报告，
+# 绝不回退到本地分支（回退即违背「基于上游」的约定）。
+default_branch() {
+  local ref
+  if ref="$(default_branch_local)"; then
+    printf '%s\n' "${ref}"
+    return 0
+  fi
+  ref="$(git remote show origin 2>/dev/null | sed -n 's/^[[:space:]]*HEAD branch: //p')" || return 1
+  [[ -n "${ref}" ]] || return 1
+  printf '%s\n' "${ref}"
+}
+
+# worktree 根：<主工作树父目录>/.iloop-worktrees/<repo>/<N>
+# 基准必须是主工作树而非 cwd —— 否则在 linked worktree 内调用会算出错误路径。
+wt_root() {
+  local n="$1" primary
+  primary="$(primary_toplevel)" || return 1
+  printf '%s/%s/%s/%s\n' \
+    "$(dirname "${primary}")" "${WORKTREE_ROOT_NAME}" "$(basename "${primary}")" "${n}"
+}
+
+# 从 riper/<N> 解析 Issue 号；非该形态返回非 0
+issue_of_branch() {
+  local b="$1"
+  case "${b}" in
+    "${BRANCH_PREFIX}"/*) printf '%s\n' "${b#"${BRANCH_PREFIX}"/}" ;;
+    *)                    return 1 ;;
+  esac
+}
+
+# Issue 编号必须是正整数（拒绝空串、非数字、0、负数、小数）
+valid_issue_num() {
+  case "$1" in
+    ''|*[!0-9]*) return 1 ;;
+    0)           return 1 ;;
+    *)           return 0 ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# workspace status：只读报告工作区隔离状态。不联网、无副作用。
+# ---------------------------------------------------------------------------
+cmd_workspace_status() {
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    log_error "当前不在 git 工作树内，无法判定工作区状态。"
+    exit 1
+  fi
+
+  local top primary branch issue db counts dirty
+  top="$(repo_toplevel)" || exit 1
+
+  if is_linked_worktree; then
+    log_info "工作区类型：linked worktree（已隔离）"
+  else
+    log_info "工作区类型：主工作树"
+  fi
+  log_info "当前工作树：${top}"
+
+  if branch="$(current_branch)"; then
+    log_info "当前分支：${branch}"
+    if issue="$(issue_of_branch "${branch}")"; then
+      log_info "归属 Issue：#${issue}"
+    else
+      log_info "归属 Issue：无（分支非 ${BRANCH_PREFIX}/<N> 形态）"
+    fi
+  else
+    log_info "当前分支：无（detached HEAD @ $(git rev-parse --short HEAD)）"
+    log_info "归属 Issue：无 —— detached HEAD 无分支身份，其改动无法合并 / 回滚 / 追溯。"
+    log_info "修复方式：./scripts/git-ops.sh workspace start <N>（会挂上 ${BRANCH_PREFIX}/<N> 并保留现有提交）"
+  fi
+
+  if primary="$(primary_toplevel)"; then
+    log_info "主工作树：${primary}"
+    log_info "worktree 根：$(dirname "${primary}")/${WORKTREE_ROOT_NAME}/$(basename "${primary}")"
+  fi
+
+  if db="$(default_branch_local)" && git rev-parse --verify -q "origin/${db}" >/dev/null 2>&1; then
+    log_info "基分支：origin/${db}"
+    counts="$(git rev-list --left-right --count "origin/${db}...HEAD" 2>/dev/null)" || counts=""
+    if [[ -n "${counts}" ]]; then
+      log_info "相对基分支：落后 ${counts%%$'\t'*} / 领先 ${counts##*$'\t'}"
+    fi
+  else
+    log_info "基分支：本地未能探测（origin/HEAD 缺失）；workspace start 会联网兜底，或用 --base <ref> 指定"
+  fi
+
+  dirty="$(git status --porcelain | grep -c . || true)"
+  log_info "未提交变更文件数：${dirty}"
+
+  log_info "worktree 清单："
+  git worktree list | sed 's/^/[git-ops]   /'
+
+  if ! is_linked_worktree && [[ "${dirty}" != "0" ]]; then
+    log_info "注意：你在主工作树且有 ${dirty} 个未提交变更。若存在并行会话，这些变更可能不属于本角色 / 本 Issue，"
+    log_info "      并会让 guard 把无辜的并行判成越界。并行推进请先执行：./scripts/git-ops.sh workspace start <N>"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# linked worktree 内的规范化（C11）：绝不新建 worktree，只把当前工作区挂到 riper/<N>
+#
+# 四态状态机：
+#   已在 riper/<N>        → 幂等，报告就绪
+#   在 riper/<M>（M≠N）   → 拒绝：工作区已属 Issue M，不得挪用
+#   detached HEAD         → git switch -c riper/<N>，保留宿主已有提交，并声明基线非上游
+#   其他分支（如 main）    → 拒绝且不切换：擅自 switch 会丢失该会话的上下文
+#
+# 失败一律 return 1（由调用方 exit），不在 helper 里直接退出。
+# ---------------------------------------------------------------------------
+normalize_linked_workspace() {
+  local num="$1" branch="$2" cur sha db
+
+  if cur="$(current_branch)"; then
+    case "${cur}" in
+      "${branch}")
+        log_info "工作区已就绪（幂等）：Issue #${num}"
+        log_info "  分支：${branch}（linked worktree，未做任何改动）"
+        log_info "  路径：$(pwd -P)"
+        return 0
+        ;;
+      "${BRANCH_PREFIX}"/*)
+        log_error "当前工作区已属 Issue #${cur#"${BRANCH_PREFIX}"/}（分支 ${cur}），不得挪用于 Issue #${num}。"
+        log_error "本脚本未做任何 git 写操作。请在主工作树为 Issue #${num} 另建工作区："
+        log_error "  cd $(primary_toplevel) && ./scripts/git-ops.sh workspace start ${num}"
+        return 1
+        ;;
+      *)
+        log_error "当前工作区停在分支 ${cur}，不是 ${BRANCH_PREFIX}/<N> 形态。"
+        log_error "本脚本不会擅自切换分支（会丢失该会话的上下文），未做任何 git 写操作。"
+        return 1
+        ;;
+    esac
+  fi
+
+  # detached HEAD：宿主（如 codex / Qoder 的 worktree 隔离）建了工作区却没给分支身份。
+  # 用 switch -c 就地挂分支，宿主已产生的提交全部保留在新分支上。
+  sha="$(git rev-parse --short HEAD)"
+  if git show-ref --verify --quiet "refs/heads/${branch}"; then
+    log_error "分支 ${branch} 已存在，而当前工作区是 detached HEAD @ ${sha}。"
+    log_error "本脚本不会自动删除或复用它。请人工确认后处置："
+    log_error "  git worktree list           # 看它是否已绑定别的工作区"
+    log_error "  git branch -d ${branch}     # 确认无用后再由你手工删除"
+    return 1
+  fi
+  if ! git switch -c "${branch}"; then
+    log_error "git switch -c ${branch} 失败。"
+    return 1
+  fi
+
+  db="$(default_branch_local 2>/dev/null || printf '<未探测>')"
+  log_info "工作区已规范化：Issue #${num}"
+  log_info "  分支：${branch}（由 detached HEAD 就地挂载，原有提交全部保留）"
+  log_info "  路径：$(pwd -P)"
+  log_info "  基线：detached HEAD @ ${sha}，**不是** origin/${db}——"
+  log_info "        宿主建工作区时可能已带入本地或他处提交，请自行确认基线是否符合预期。"
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# workspace start <N> [--base <ref>]：为 Issue N 建立隔离工作区
+#
+# 主工作树   → fetch 后基于 origin/<默认分支> 自建仓库外 worktree + riper/<N> 分支
+# linked 树  → 不嵌套创建，只把当前工作区规范化到 riper/<N>（见 normalize_linked_workspace）
+# 基分支恒为上游：绝不回退到本地分支，否则会携带他人未推送的提交。
+# ---------------------------------------------------------------------------
+cmd_workspace_start() {
+  local num="" base=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --base)
+        if [[ $# -lt 2 ]]; then
+          log_error "--base 需要一个 <ref> 参数。"
+          exit 1
+        fi
+        base="$2"; shift 2
+        ;;
+      -*)
+        log_error "workspace start：未知选项 '$1'（Issue 编号必须是正整数）。"
+        exit 1
+        ;;
+      *)
+        if [[ -z "${num}" ]]; then
+          num="$1"; shift
+        else
+          log_error "workspace start：多余参数 '$1'。"
+          exit 1
+        fi
+        ;;
+    esac
+  done
+
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    log_error "当前不在 git 工作树内，无法建立工作区。"
+    exit 1
+  fi
+  if ! valid_issue_num "${num}"; then
+    log_error "Issue 编号必须是正整数（收到：'${num:-<空>}'）。"
+    exit 1
+  fi
+
+  local branch="${BRANCH_PREFIX}/${num}"
+
+  # linked worktree 内绝不新建 worktree（C11 不嵌套）；必须先于「分支已存在」判断，
+  # 否则幂等重入（已在 riper/<N>）会被那条快失败误伤。
+  if is_linked_worktree; then
+    normalize_linked_workspace "${num}" "${branch}" || exit 1
+    return 0
+  fi
+
+  # 分支已存在 → 快失败。兼作本地互斥信号：该 Issue 可能已被另一会话认领。
+  # 不自动删除或复用（A4 + 禁破坏性操作）。
+  if git show-ref --verify --quiet "refs/heads/${branch}"; then
+    log_error "分支 ${branch} 已存在——该 Issue 可能已被另一会话认领，或上次异常退出残留。"
+    log_error "本脚本不会自动删除或复用它。请人工确认后处置："
+    log_error "  git worktree list           # 看它是否已绑定工作区"
+    log_error "  git branch -d ${branch}     # 确认无用后再由你手工删除"
+    exit 1
+  fi
+
+  # --- 主工作树：基于上游自建 worktree ---
+  local db base_ref wt abs
+
+  # 路径冲突先于 fetch 检查：纯本地判断，避免为注定失败的调用打一次网络。
+  if ! wt="$(wt_root "${num}")"; then
+    log_error "无法计算 worktree 根路径（主工作树解析失败）。"
+    exit 1
+  fi
+  if [[ -e "${wt}" ]]; then
+    log_error "目标路径已存在：${wt}"
+    log_error "本脚本不会覆盖或删除它。请人工确认其内容后处置。"
+    exit 1
+  fi
+
+  if [[ -n "${base}" ]]; then
+    if ! git rev-parse --verify -q "${base}" >/dev/null 2>&1; then
+      log_error "--base 指定的 ref 不存在：'${base}'。"
+      exit 1
+    fi
+    base_ref="${base}"
+  else
+    if ! db="$(default_branch)"; then
+      log_error "无法探测默认分支（origin/HEAD 缺失，且 git remote show origin 失败）。"
+      log_error "本脚本不会回退到本地分支——那会携带他人未推送的提交。"
+      log_error "请显式指定基分支：./scripts/git-ops.sh workspace start ${num} --base <ref>"
+      exit 1
+    fi
+    log_info "默认分支：${db}"
+    if ! git fetch -q origin "${db}"; then
+      log_error "git fetch origin ${db} 失败（网络不可达或权限不足）。"
+      log_error "离线时请显式指定一个本地 ref：./scripts/git-ops.sh workspace start ${num} --base <ref>"
+      exit 1
+    fi
+    base_ref="origin/${db}"
+  fi
+
+  # --no-track 为必需项：不加时 git 会把 riper/<N> 设为 tracking origin/<默认分支>，
+  # 导致 push.default=simple 下的推送因分支名与上游名不一致而被拒。
+  if ! git worktree add --no-track -b "${branch}" "${wt}" "${base_ref}"; then
+    log_error "git worktree add 失败（基分支：${base_ref}）。"
+    exit 1
+  fi
+
+  abs="$(cd "${wt}" && pwd -P)"
+  log_info "工作区已建立：Issue #${num}"
+  log_info "  分支：${branch}（基于 ${base_ref}，未设 upstream）"
+  log_info "  路径：${abs}"
+  log_info "后续所有仓库内命令必须以该绝对路径为 cwd——宿主可能在每次调用后重置 cwd，"
+  log_info "故请用 'cd ${abs} && …' 前缀或工具的工作目录参数，不要假设 cwd 会延续。"
+}
+
+# 绑定到指定分支的 worktree 路径；没有绑定则输出空（返回 0）。
+# porcelain 每个条目内 worktree 行先于 branch 行，故累积 path 再匹配即可。
+worktree_of_branch() {
+  local want="refs/heads/$1" path="" line
+  while IFS= read -r line; do
+    case "${line}" in
+      "worktree "*) path="${line#worktree }" ;;
+      "branch "*)
+        if [[ "${line#branch }" == "${want}" ]]; then
+          printf '%s\n' "${path}"
+          return 0
+        fi
+        ;;
+    esac
+  done < <(git worktree list --porcelain)
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# workspace finish <N>：清理 Issue N 的本地工作区（A1：仅本地，不含推送 / PR / 合并）
+#
+# 顺序即安全闸门：定位 → 干净性 → 已合并进 origin/<默认分支> → 移除 worktree → 删分支。
+# 任一闸门不过就停下报告，绝不丢弃任何一方（C3：不用 remove --force、不用 branch -D）。
+#
+# 已合并判定只读本地的 origin/<默认分支> 引用，不 fetch：远端刚合并而本地未 fetch 时
+# 会判为「未合并」而拒绝——偏保守，且离线可用。
+# 空的父目录 .iloop-worktrees/<repo> 保留，不递归删除（C3）。
+# ---------------------------------------------------------------------------
+cmd_workspace_finish() {
+  local num="$1"
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    log_error "当前不在 git 工作树内，无法清理工作区。"
+    exit 1
+  fi
+  if ! valid_issue_num "${num}"; then
+    log_error "Issue 编号必须是正整数（收到：'${num:-<空>}'）。"
+    exit 1
+  fi
+
+  local branch="${BRANCH_PREFIX}/${num}"
+  if ! git show-ref --verify --quiet "refs/heads/${branch}"; then
+    log_error "分支 ${branch} 不存在——Issue #${num} 没有可清理的本地工作区。"
+    log_error "现有工作区："
+    git worktree list | sed 's/^/  /' >&2
+    exit 1
+  fi
+
+  # 分支可能没绑任何 worktree（例如上次创建中断的残留），此时跳过移除只删分支。
+  local wt dirty db
+  wt="$(worktree_of_branch "${branch}")"
+
+  if [[ -n "${wt}" ]]; then
+    dirty="$(git -C "${wt}" status --porcelain)"
+    if [[ -n "${dirty}" ]]; then
+      log_error "工作区有未提交改动，拒绝清理（不丢弃任何一方）：${wt}"
+      printf '%s\n' "${dirty}" | sed 's/^/  /' >&2
+      log_error "请先提交，或人工处置这些改动后重试。"
+      exit 1
+    fi
+  fi
+
+  if ! db="$(default_branch_local)"; then
+    log_error "无法本地探测默认分支（origin/HEAD 缺失），无法确认 ${branch} 是否已合并。"
+    log_error "无法确认时本脚本不会删除工作区。请先执行：git remote set-head origin -a"
+    exit 1
+  fi
+  if ! git rev-parse --verify -q "refs/remotes/origin/${db}" >/dev/null 2>&1; then
+    log_error "本地不存在 origin/${db} 引用，无法确认 ${branch} 是否已合并。"
+    log_error "无法确认时本脚本不会删除工作区。请先执行：git fetch origin ${db}"
+    exit 1
+  fi
+  if ! git merge-base --is-ancestor "${branch}" "origin/${db}"; then
+    log_error "${branch} 尚未合并进 origin/${db}，拒绝清理（会丢失未集成的工作）。"
+    log_error "请先完成集成（推送分支 + 开 PR + 合并，集成契约见 #25），再回来清理。"
+    log_error "未合并的提交："
+    git log --oneline "origin/${db}..${branch}" | sed 's/^/  /' >&2
+    exit 1
+  fi
+
+  if [[ -n "${wt}" ]]; then
+    if ! git worktree remove "${wt}"; then
+      log_error "git worktree remove 失败：${wt}"
+      exit 1
+    fi
+    log_info "已移除工作区：${wt}"
+  else
+    log_info "分支 ${branch} 未绑定任何 worktree（疑似上次创建中断的残留），跳过移除。"
+  fi
+
+  if ! git branch -d "${branch}"; then
+    log_error "git branch -d ${branch} 失败（分支未合并或仍被占用）。"
+    exit 1
+  fi
+  log_info "已删除分支：${branch}"
+  log_info "Issue #${num} 的本地工作区清理完毕；空的父目录按约定保留。"
 }
 
 # ---------------------------------------------------------------------------
@@ -1523,8 +1997,35 @@ main() {
       cmd_doctor
       ;;
     guard)
-      [[ $# -eq 1 ]] || usage
-      cmd_guard "$1"
+      # 第二参数（Issue 编号）可选；超出 2 个走 usage
+      [[ $# -ge 1 && $# -le 2 ]] || usage
+      cmd_guard "$@"
+      ;;
+    workspace)
+      # 工作区隔离（环境级操作，不限角色）。子命令各自的参数校验在其分支内完成。
+      if [[ $# -lt 1 ]]; then
+        usage
+      fi
+      local wsub="$1"
+      shift
+      case "${wsub}" in
+        status)
+          [[ $# -eq 0 ]] || usage
+          cmd_workspace_status
+          ;;
+        start)
+          # 编号与 --base 的校验在 cmd_workspace_start 内完成（需要给出精确错误文案）
+          [[ $# -ge 1 ]] || usage
+          cmd_workspace_start "$@"
+          ;;
+        finish)
+          [[ $# -eq 1 ]] || usage
+          cmd_workspace_finish "$1"
+          ;;
+        *)
+          usage
+          ;;
+      esac
       ;;
     issue)
       # list 子命令的参数全为可选，故守卫放宽为 `$# -lt 1`（裸 `issue` 仍报 usage）；
