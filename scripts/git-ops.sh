@@ -1940,6 +1940,21 @@ cmd_workspace_finish() {
     exit 1
   fi
 
+  # 移除会让 cwd 消失（调用者可能正站在 ${wt} 里），紧随其后的 git 调用会因
+  # "Unable to read current working directory" 失败，把命令打成「目录已删、分支还在」
+  # 的半途状态。故在任何删除动作之前先把 cwd 挪到主工作树，建立「移除后 cwd 恒有效」的不变量。
+  # 无条件执行：本来就在主工作树时 cd 幂等，比先判断 cwd 是否在 ${wt} 内更短、边界更少。
+  local caller_cwd primary
+  caller_cwd="$(pwd -P)"
+  if ! primary="$(primary_toplevel)"; then
+    log_error "无法解析主工作树路径；已在删除任何东西之前停下。"
+    exit 1
+  fi
+  if ! cd "${primary}"; then
+    log_error "无法进入主工作树 ${primary}；已在删除任何东西之前停下。"
+    exit 1
+  fi
+
   if [[ -n "${wt}" ]]; then
     if ! git worktree remove "${wt}"; then
       log_error "git worktree remove 失败：${wt}"
@@ -1956,6 +1971,15 @@ cmd_workspace_finish() {
   fi
   log_info "已删除分支：${branch}"
   log_info "Issue #${num} 的本地工作区清理完毕；空的父目录按约定保留。"
+
+  # 只在调用者真的站在被删目录里时才提示，避免对从主工作树调用的正常情况制造噪音。
+  if [[ -n "${wt}" ]]; then
+    case "${caller_cwd}" in
+      "${wt}"|"${wt}"/*)
+        log_info "注意：你调用时所在的目录已随工作区一并删除，请切回主工作树：cd ${primary}"
+        ;;
+    esac
+  fi
 }
 
 # ---------------------------------------------------------------------------
