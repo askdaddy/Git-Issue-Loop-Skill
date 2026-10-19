@@ -72,7 +72,7 @@ done
 `/iloop` 在目标项目 `doctor` **之前**、每会话一次，于**当前加载的 `SKILL.md` 所在目录**（默认 `~/.agents/skills/iloop`）运行 `scripts/check-update.sh`。比较本地 `git describe --tags --exact-match`（失败则用 HEAD SHA）与 `skill-manifest.json` 里 `distribution.repository` 的最高稳定 `vX.Y.Z` tag。
 
 - 有更高稳定版：向用户展示本地 tag 与远端 latest，询问是否按上文一句话升级。**Agent 不得自行切换安装。**
-- 检查失败（网络、非 git、无稳定 tag）不阻止后续 doctor 与闭环。
+- 检查失败（网络、非 git、无稳定 tag）不阻止后续 doctor 与闭环；但 Agent 必须转述脚本输出的 git 失败原因与 `local_ref`（当前已安装版本），并说明本次**无法确认是否为最新版**。脚本在失败时也会输出 `status=error` + `local_ref=`，不会因远端不可达而丢掉本地版本。
 - 禁止用目标项目的 `git remote` 作为检查源；禁止把 `skill.version` 当作已安装 tag。
 
 ## 发行者约定
