@@ -55,7 +55,7 @@ assert_no_grep "$LADDER" '/ponytail[[:space:]]+lite' "ladder does not expose /po
 
 echo "=== step 2 manifest ==="
 assert_grep "$MANIFEST" 'references/lazy-ladder.md' "requiredPaths includes lazy-ladder"
-assert_grep "$MANIFEST" '"version": "0.6.7"' "skill.version is 0.6.7"
+assert_grep "$MANIFEST" '"version": "0.6.8"' "skill.version is 0.6.8"
 if python3 -m json.tool "$MANIFEST" >/dev/null; then
   echo "PASS manifest is valid JSON"
 else
