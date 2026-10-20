@@ -21,10 +21,10 @@
 #   ./git-ops.sh --role <planner|developer|reviewer> <子命令> ...
 #
 #   完整子命令清单以 usage() 为唯一事实来源（不带参数运行 ./git-ops.sh 即打印）：
-#   issue list|get|comment|create|close|reopen|priority|status|retry|label、
+#   issue list|get|comment|create|close|reopen|priority|status|retry|claim|label、
 #   labels init、guard <role> [num]、workspace status|start|finish、platform、doctor。
 #   排他语义：priority / status / retry 三族各自同时只保留一个标签，
-#   由脚本在写入时自动清理同族其他标签。
+#   由脚本在写入时自动清理同族其他标签。认领 riper-claimed 非排他，不参与此清理。
 #
 # CLI 优先原则：
 #   Issue 操作一律优先使用本地官方 CLI（GitHub->gh，GitLab->glab，Gitea/Forgejo->tea）。
@@ -32,7 +32,7 @@
 #   而是输出对应平台的安装 + 授权指南并以 exit 1 中止，由 Agent 转交给用户处理。
 #   完整指南见 references/cli-setup.md。
 #
-# 标签族（前三个互斥，由脚本强制排他；合计 14 个内置标签 = 4 + 7 + 3）：
+# 标签族（前三个互斥，由脚本强制排他；合计 15 个内置标签 = 4 + 7 + 3 + 1）：
 #   - 优先级 p0~p3，按艾森豪威尔矩阵定义：
 #       p0 = 重要且紧急    p1 = 重要不紧急
 #       p2 = 紧急不重要    p3 = 不重要不紧急
@@ -41,8 +41,10 @@
 #     riper-review / riper-verified / riper-blocked（描述 RIPER 各阶段，同时只能一个）
 #   - 重试计数 riper-retry-1 / -2 / -3（QA 审查 FAIL 退回计划的轮次，达 3 即上限须转
 #     riper-blocked）；incr 仅 reviewer 可用，get/reset 不限角色。
-#   - 自由标签（第四类，**不排他**）由 Agent 自定义，便于上下文召回（如 module/xxx、
-#     type/bug），经 issue label add|remove 操作，不计入上述 14 个内置标签。
+#   - 认领 riper-claimed（第四类，受管但**不排他**）：多会话并行时标记某 Issue 已被
+#     某会话认领，自动挑选跳过之。由 issue claim <N> claim|release|get 操作，计入内置标签。
+#   - 自由标签（第五类，**不排他**）由 Agent 自定义，便于上下文召回（如 module/xxx、
+#     type/bug），经 issue label add|remove 操作，不计入上述 15 个内置标签。
 #
 # 权限硬校验（--role，也可用环境变量 GIT_OPS_ROLE 指定）：
 #   - close / reopen 仅 planner / reviewer 可用，Developer 调用直接拒绝；
@@ -52,8 +54,10 @@
 #       developer riper-execute / riper-review / riper-blocked
 #       reviewer  riper-plan（FAIL 退回） / riper-verified / riper-blocked
 #   - retry incr 仅 reviewer 可用（get / reset 不限角色）；
-#   - label add/remove 不限角色，但禁止操作上述三个互斥标签族（优先级 / 状态 / 重试，
-#     须用专用子命令）；
+#   - claim claim/release/get 不限角色（跨会话协调信号，非状态裁决）；对已认领 Issue
+#     执行 claim 会被拒绝（不抢占），硬校验在 cmd_issue_claim 内；
+#   - label add/remove 不限角色，但禁止操作上述三个互斥标签族与认领族（优先级 / 状态 /
+#     重试 / 认领，须用专用子命令）；
 #   - 未指定 --role 时仅打印警告并放行（便于人工直接调用）。
 # ============================================================================
 
@@ -94,16 +98,17 @@ Commands:
   git-ops.sh issue priority <num> <p0|p1|p2|p3>    设置优先级（艾森豪威尔矩阵，排他）
   git-ops.sh issue status <num> <riper-*>          切换 RIPER 状态（排他）
   git-ops.sh issue retry <num> <incr|get|reset>    重试计数持久化（排他 riper-retry-K；incr 仅 QA 可用）
+  git-ops.sh issue claim <num> <claim|release|get> 认领互斥（非排他 riper-claimed；claim 写标签+审计评论，已认领则拒绝抢占）
   git-ops.sh issue label <num> add <label>         添加自由标签（上下文召回用）
   git-ops.sh issue label <num> remove <label>      移除自由标签
-  git-ops.sh labels init                            初始化标签体系（4 优先级 + 7 状态 + 3 重试，幂等）
+  git-ops.sh labels init                            初始化标签体系（4 优先级 + 7 状态 + 3 重试 + 1 认领，幂等）
   git-ops.sh guard <role> [num]                    可写区域越界自检（提交前必跑；role=planner|developer|reviewer；
                                                     num=Issue 编号，给出时额外校验当前分支是否为 riper/<num>）
   git-ops.sh workspace status                       报告工作区隔离状态（主/linked、分支、归属 Issue、worktree 清单）
   git-ops.sh workspace start <num> [--base <ref>]   为 Issue <num> 建立隔离工作区（仓库外 worktree + riper/<num> 分支，基于上游）
   git-ops.sh workspace finish <num>                 清理 Issue <num> 的本地工作区（仅干净且已合并进上游时；不含推送/合并）
   git-ops.sh platform                               打印检测到的托管平台
-  git-ops.sh doctor                                 自检：运行环境 → CLI 路由 → 安装 → 授权 → 14 个内置标签就绪
+  git-ops.sh doctor                                 自检：运行环境 → CLI 路由 → 安装 → 授权 → 15 个内置标签就绪
                                                     （任一项不就绪即输出指南并 exit 1）
 EOF
   exit 1
@@ -386,9 +391,13 @@ STATUS_LABELS="riper-research riper-innovation riper-plan riper-execute riper-re
 # 重试计数：QA 审查 FAIL 退回计划的次数（第三族，同样排他；达 3 次后须转 riper-blocked）
 # 存于 Issue 标签而非本地文件，以保证跨会话 / 跨机器 / 跨 agent 可见（Issue 为唯一事实来源）
 RETRY_LABELS="riper-retry-1 riper-retry-2 riper-retry-3"
+# 认领：多会话并行时标记 Issue 已被某会话认领（第四类，受管但**不排他**，计入内置标签）。
+# 与 retry 同构——把「谁认领了」落到 Issue 标签而非依赖 Agent 跨会话记忆；自动挑选跳过已认领项。
+# 仅经 issue claim <N> claim|release|get 操作（保证标签与审计评论同时落地），禁用 issue label 触碰。
+CLAIM_LABELS="riper-claimed"
 
 # 标签元数据：输出「颜色 描述」，颜色为 6 位 hex（不带 #），供 labels init 建标签时使用。
-# 覆盖三个互斥族全部 14 个标签（4 优先级 + 7 状态 + 3 重试）；未知标签返回非 0。
+# 覆盖全部 15 个内置标签（4 优先级 + 7 状态 + 3 重试 + 1 认领）；未知标签返回非 0。
 label_meta() {
   case "$1" in
     p0) echo "B60205 艾森豪威尔：重要且紧急 — 立即处理，阻塞发布/线上事故" ;;
@@ -405,6 +414,7 @@ label_meta() {
     riper-retry-1)    echo "FBCA04 RIPER 重试计数：审查 FAIL 退回 1 次（仅 QA 可递增）" ;;
     riper-retry-2)    echo "D93F0B RIPER 重试计数：审查 FAIL 退回 2 次（仅 QA 可递增）" ;;
     riper-retry-3)    echo "B60205 RIPER 重试计数：审查 FAIL 退回 3 次，已达上限须转 riper-blocked" ;;
+    riper-claimed)    echo "000000 RIPER 认领：该 Issue 已被某会话认领，自动挑选跳过（非排他，经 issue claim 操作）" ;;
     *) return 1 ;;
   esac
 }
@@ -426,6 +436,13 @@ is_status_label() {
 is_retry_label() {
   local l="$1" x
   for x in ${RETRY_LABELS}; do [[ "${x}" == "${l}" ]] && return 0; done
+  return 1
+}
+
+# 判定标签是否属于认领族（riper-claimed；受管非排他，仅经 issue claim 操作）
+is_claim_label() {
+  local l="$1" x
+  for x in ${CLAIM_LABELS}; do [[ "${x}" == "${l}" ]] && return 0; done
   return 1
 }
 
@@ -552,6 +569,10 @@ check_permission() {
         log_error "标签 '${value}' 属于重试计数族（排他），请改用 'issue retry <num> incr|get|reset' 子命令。"
         exit 1
       fi
+      if is_claim_label "${value}"; then
+        log_error "标签 '${value}' 属认领族，请改用 'issue claim <num> claim|release|get' 子命令（保证标签与审计评论同时落地）。"
+        exit 1
+      fi
       ;;
     retry-incr)
       # 重试计数仅由 QA 在审查 FAIL 退回时登记，PM / 开发不得自增（防止执行者刷计数）
@@ -562,6 +583,10 @@ check_permission() {
       ;;
     retry-read)
       # 只读：三角色均放行（get / reset 不限角色）
+      ;;
+    claim-read|claim-write)
+      # 认领是跨会话协调信号、非 Issue 状态裁决，三角色（及无角色）均放行；
+      # 「不抢占已认领」的硬校验在 cmd_issue_claim 内实现，不在此处按角色限制。
       ;;
     guard)
       # 提交前自检属合法动作，三角色均放行；这里校验位置参数中的目标角色名是否合法
@@ -693,6 +718,7 @@ EOF_RAW
         case "${tok}" in
           p0|p1|p2|p3)   [[ -z "${prio}" ]] && prio="${tok}" ;;
           riper-retry-*) : ;;
+          riper-claimed) : ;;  # 认领标签非状态，排除出状态列（否则污染自动挑选读取）
           riper-*)       [[ -z "${disp}" ]] && disp="${tok}" ;;
         esac
       done
@@ -1251,6 +1277,92 @@ cmd_issue_retry() {
 }
 
 # ---------------------------------------------------------------------------
+# 组织认领/释放审计评论载体：动作 + git 用户 + UTC 时间戳 + worktree 路径 + 分支 + 主机名。
+# 供人工审计与陈旧认领判定。任一字段不可得时占位降级（不报错）——审计信息尽力而为，
+# 缺失不阻断认领。命令替换一律 `|| true`：set -e 下 git config/hostname 失败会误杀赋值。
+# 用法：claim_audit_body <claim|release> <num>
+claim_audit_body() {
+  local action="$1" num="$2"
+  local user email ts wt br host verb
+  user="$(git config user.name 2>/dev/null || true)";  [[ -n "${user}"  ]] || user="(未知)"
+  email="$(git config user.email 2>/dev/null || true)"; [[ -n "${email}" ]] || email="(未知)"
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || true)"; [[ -n "${ts}" ]] || ts="(未知)"
+  wt="$(git rev-parse --show-toplevel 2>/dev/null || true)"; [[ -n "${wt}" ]] || wt="$(pwd -P)"
+  br="$(current_branch 2>/dev/null || true)"; [[ -n "${br}" ]] || br="(非分支/detached)"
+  host="$(hostname 2>/dev/null || true)"; [[ -n "${host}" ]] || host="(未知)"
+  if [[ "${action}" == "claim" ]]; then verb="认领"; else verb="释放"; fi
+  printf '%s\n' \
+    "RIPER ${verb}：Issue #${num}" \
+    "" \
+    "- 动作：${action}" \
+    "- 会话标识：${user} <${email}> @ ${host}" \
+    "- 时间戳（UTC）：${ts}" \
+    "- worktree 路径：${wt}" \
+    "- 分支：${br}" \
+    "" \
+    "> 由 issue claim 自动组织。认领是跨会话尽力而为的信号、非硬锁；同机硬闸为 workspace start 的 riper/<N> 分支快失败。"
+}
+
+# ---------------------------------------------------------------------------
+# 认领互斥：把「某 Issue 已被某会话认领」落到非排他的 riper-claimed 标签 + 审计评论。
+# 用法：cmd_issue_claim <num> <claim|release|get>
+#   get     —— 输出 claimed / unclaimed（廉价可靠读取，供自动挑选跳过判定；不限角色）。
+#   claim   —— 已认领则回显既有认领并 exit 1（拒绝抢占，C7）；否则写标签 + 审计评论。
+#   release —— 移除标签 + 释放评论；未认领时幂等只报告。
+# 跨族安全：仅触碰 CLAIM_LABELS，绝不影响 p0~p3 / riper-* 状态 / riper-retry-*。
+# 尽力而为：读后写非原子，真·同时竞态可能双双通过检查；同机硬闸是 workspace 分支快失败。
+# ---------------------------------------------------------------------------
+cmd_issue_claim() {
+  local num="$1" action="$2"
+
+  # 读当前是否已认领（大小写不敏感命中 riper-claimed）
+  local claimed=0 lab lab_lc current
+  if ! current="$(raw_issue_labels "${num}")"; then
+    log_error "无法读取 Issue #${num} 的实际标签，不能确定认领状态。"
+    return 1
+  fi
+  while IFS= read -r lab; do
+    [[ -z "${lab}" ]] && continue
+    lab_lc="$(printf '%s' "${lab}" | tr '[:upper:]' '[:lower:]')"
+    [[ "${lab_lc}" == "riper-claimed" ]] && claimed=1
+  done <<< "${current}"
+
+  case "${action}" in
+    get)
+      check_permission claim-read
+      if [[ "${claimed}" -eq 1 ]]; then printf '%s\n' "claimed"; else printf '%s\n' "unclaimed"; fi
+      ;;
+    claim)
+      check_permission claim-write
+      if [[ "${claimed}" -eq 1 ]]; then
+        # C7：不抢占。回显既有认领信号，处置权交回人工/用户。
+        log_error "Issue #${num} 已被认领（存在 riper-claimed 标签）——本脚本不会抢占。"
+        log_error "请查看该 Issue 最近的认领评论确认持有者（会话/时间/worktree/分支）："
+        log_error "  ./scripts/git-ops.sh issue get ${num}"
+        log_error "陈旧认领的处置权属于用户；确认无主后再由人工执行 release。"
+        exit 1
+      fi
+      raw_label_add "${num}" "riper-claimed"
+      cmd_issue_comment "${num}" "$(claim_audit_body claim "${num}")"
+      log_info "已认领 Issue #${num}（写入 riper-claimed 标签 + 审计评论）。"
+      ;;
+    release)
+      check_permission claim-write
+      if [[ "${claimed}" -eq 0 ]]; then
+        log_info "Issue #${num} 未被认领，无需释放（幂等）。"
+        return 0
+      fi
+      raw_label_remove "${num}" "riper-claimed"
+      cmd_issue_comment "${num}" "$(claim_audit_body release "${num}")"
+      log_info "已释放 Issue #${num} 的认领（移除 riper-claimed 标签 + 释放评论）。"
+      ;;
+    *)
+      usage
+      ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
 # 创建 Issue：gh/glab 均支持 create；tea 优先 issue create，失败时回退 issues create
 # ---------------------------------------------------------------------------
 cmd_issue_create() {
@@ -1332,7 +1444,7 @@ cmd_issue_reopen() {
 }
 
 # ---------------------------------------------------------------------------
-# 标签体系初始化：幂等创建/更新三个互斥族全部 14 个标签
+# 标签体系初始化：幂等创建/更新全部 15 个内置标签（三互斥族 + 认领 riper-claimed）
 # 新仓库首次使用本 Skill 前必须执行；否则 issue priority / status 会因
 # 平台侧标签不存在而报 'p0' not found 并 exit 1（bootstrap 死锁）。
 # ---------------------------------------------------------------------------
@@ -1342,7 +1454,7 @@ cmd_labels_init() {
 
   local l meta color desc result ok=0 fail=0 total=0
 
-  for l in ${PRIORITY_LABELS} ${STATUS_LABELS} ${RETRY_LABELS}; do
+  for l in ${PRIORITY_LABELS} ${STATUS_LABELS} ${RETRY_LABELS} ${CLAIM_LABELS}; do
     total=$((total + 1))
     if ! meta="$(label_meta "${l}")"; then
       log_error "内部错误：标签 '${l}' 缺少元数据（label_meta 未覆盖）。"
@@ -1367,7 +1479,7 @@ cmd_labels_init() {
 
   printf '\n'
   if [[ "${fail}" -eq 0 ]]; then
-    log_info "标签体系就绪：${ok}/${total}（优先级 4 + 状态 7 + 重试 3）。"
+    log_info "标签体系就绪：${ok}/${total}（优先级 4 + 状态 7 + 重试 3 + 认领 1）。"
   else
     log_error "标签体系不完整：成功 ${ok}/${total}，失败 ${fail} 个。"
     exit 1
@@ -1418,7 +1530,7 @@ cmd_doctor() {
     exit 1
   fi
 
-  local want all="${PRIORITY_LABELS} ${STATUS_LABELS} ${RETRY_LABELS}"
+  local want all="${PRIORITY_LABELS} ${STATUS_LABELS} ${RETRY_LABELS} ${CLAIM_LABELS}"
   local total=0 missing=""
   for want in ${all}; do
     total=$((total + 1))
@@ -1428,7 +1540,7 @@ cmd_doctor() {
   done
 
   if [[ -z "${missing}" ]]; then
-    log_info "标签体系就绪：${total}/${total}（优先级 4 + 状态 7 + 重试 3）。"
+    log_info "标签体系就绪：${total}/${total}（优先级 4 + 状态 7 + 重试 3 + 认领 1）。"
   else
     log_error "标签体系不完整，缺失以下标签："
     printf '%s' "${missing}" >&2
@@ -2102,6 +2214,14 @@ main() {
             *) usage ;;
           esac
           cmd_issue_retry "$1" "$2"
+          ;;
+        claim)
+          [[ $# -eq 2 ]] || usage
+          case "$2" in
+            claim|release|get) ;;
+            *) usage ;;
+          esac
+          cmd_issue_claim "$1" "$2"
           ;;
         create)
           [[ $# -eq 2 ]] || usage
