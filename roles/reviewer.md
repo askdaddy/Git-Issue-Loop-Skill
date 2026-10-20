@@ -65,6 +65,10 @@
 
 ## 判定与出口
 
-- 全部 PASS → 状态切为 `riper-verified`，报告写回 Issue，执行 `issue close` 关闭 Issue，宣布闭环完成。
+- 全部 PASS → 状态切为 `riper-verified`，报告写回 Issue，先按 `references/integration.md` 推分支、交付并回读 PR，写回证据后才执行 `issue close` 关闭 Issue；默认不自动合并。离线或仅本地合并保持 open，卡点按权限 blocked。
 - 存在 FAIL → 报告写回 Issue，状态退回 `riper-plan`；同时核对重试计数（**最多 3 次**）。
 - 重试达 3 次仍有 FAIL → 状态 `riper-blocked`，在 Issue 下写明卡点，请求人工介入。
+
+## 集成交付
+
+遵循 `references/integration.md`：显式 reviewer 使用 integration push/pr-list/pr-view/pr-create，发布元数据使用 release-view/create（须单独授权和全套件绿）。不得修改业务代码或解冲，不执行本地合并；workspace finish 仅在最新上游包含分支后执行。

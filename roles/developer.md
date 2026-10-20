@@ -73,3 +73,7 @@
 ## 完成标志
 
 `plan.md` 全部步骤 `[x]`、代码已提交、状态已切到 `riper-review` 后，交棒给 QA。
+
+## 本地降级
+
+仅在用户明确独立目标工作区与分支时执行 `integration local`，遵循 `references/integration.md`；仅本地合并仍保持 Issue open。冲突停止保留现场并按权限 blocked，不解冲、不自动回滚。push/PR/Release 交付由 QA 负责。

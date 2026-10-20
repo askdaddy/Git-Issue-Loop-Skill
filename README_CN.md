@@ -85,3 +85,7 @@ docs/issues/<N>/         降级落盘的阶段文档，仅当远程 Issue 平台
 `main` 是开发分支。每个稳定版都必须创建新的、不可复用的 `vX.Y.Z` tag，并应发布对应的 GitHub Release 记录变更说明。预发布版本必须使用类似 `-beta.1` 的 SemVer 后缀，默认安装器会自动跳过。改动安装协议（`INSTALL.md` 或 `skill-manifest.json` 的 `installation`）必须随新的稳定 `vX.Y.Z` tag 发布。
 
 规范性工作流规则见 [SKILL.md](SKILL.md)。英文版项目介绍见 [README.md](README.md)，稳定版本历史见 [CHANGELOG.md](CHANGELOG.md)。
+
+## Integration / 集成交付
+
+QA PASS → riper-verified → push + PR delivery and evidence → close. No automatic PR merge. Offline/local-only merge keeps the Issue open. Cleanup requires confirmed upstream integration; a stable publication needs both tag and GitHub Release. See [集成与发布契约](references/integration.md).

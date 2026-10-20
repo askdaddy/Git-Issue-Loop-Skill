@@ -64,7 +64,7 @@ description: >-
 - **降级落盘位置**：`docs/issues/<N>/`（spec.md / design.md / plan.md / verify-report.md），基于 `templates/` 填充，仅当远程 Issue 不可用时使用；用户显性指定时以用户为准。
 - **测试脚本位置**：QA 的黑盒测试脚本默认落 `test/`；用户显性指定时以用户为准。
 - **Git 操作**：一律通过 `scripts/git-ops.sh` 执行，禁止直接调用 `gh` / `glab` / `tea`。Agent 调用时**必须携带 `--role <当前角色>`**，脚本按 §1.1 权限矩阵与 §1.2 标签体系硬性校验。子命令清单：`issue list|get|comment|create|close|reopen|priority|status|retry|claim|label`、`labels init`、`guard <role> [N]`、`workspace status|start|finish`、`platform`、`doctor`。
-- **工作区隔离（并行会话必须遵守）**：一 Issue 一 worktree 一分支。开工前先 `./scripts/git-ops.sh workspace start <N>`，脚本会在**仓库外** `../.iloop-worktrees/<repo>/<N>` 建 worktree 并挂 `riper/<N>` 分支。基分支恒为 `origin/<默认分支>`，**不基于本地分支**——本地分支可能带着别的会话尚未推送的提交。已经在 linked worktree 内时**不嵌套创建**，只把当前工作区规范化到 `riper/<N>`（detached HEAD 就地挂分支并保留原提交）。收尾用 `workspace finish <N>`（仅当工作区干净且已合并进 `origin/<默认分支>`，否则拒绝清理）；推送 / PR / 合并属集成阶段，不在本命令内。
+- **工作区隔离（并行会话必须遵守）**：一 Issue 一 worktree 一分支。开工前先 `./scripts/git-ops.sh workspace start <N>`，脚本会在**仓库外** `../.iloop-worktrees/<repo>/<N>` 建 worktree 并挂 `riper/<N>` 分支。基分支恒为 `origin/<默认分支>`，**不基于本地分支**——本地分支可能带着别的会话尚未推送的提交。已经在 linked worktree 内时**不嵌套创建**，只把当前工作区规范化到 `riper/<N>`（detached HEAD 就地挂分支并保留原提交）。收尾用 `workspace finish <N>`（仅当工作区干净且已合并进 `origin/<默认分支>`，否则拒绝清理）；推送 / PR 属集成阶段，见 references/integration.md；默认不自动合并。
 - **认领互斥（并行会话必须遵守）**：`workspace start <N>` 成功（先过同机 `riper/<N>` 分支快失败这道硬闸）后，立即 `./scripts/git-ops.sh issue claim <N> claim` 写远端认领信号（`riper-claimed` 标签 + 审计评论），使其他会话的自动挑选跳过本 Issue；若 `claim` 报告"已被认领"则**不抢占**，停下交回用户。释放在闭环终态执行（见 §3.7）。认领是尽力而为信号、非硬锁（详见 §1.2(4)）。
 - **cwd 会被宿主重置**：`workspace start` 输出的是 worktree 的**绝对路径**，宿主可能在每次工具调用后把 cwd 重置回会话起点。故后续所有仓库内命令都必须以该绝对路径为 cwd（`cd <绝对路径> && …` 前缀，或使用工具自带的工作目录参数），**不得假设 cwd 会延续**；不确定时先跑 `./scripts/git-ops.sh workspace status` 确认自己在哪个工作树、哪条分支、归属哪个 Issue。
 - **平台路由**：脚本通过 `git remote -v` 自动检测并路由到对应 CLI，Agent 无需关心托管平台差异。
@@ -104,6 +104,10 @@ description: >-
 | 关闭 Issue | ✅（仅限无效/重复/被取代） | ❌ | ✅（闭环终点关闭权） |
 | 重开 Issue | ✅ | ❌ | ✅（仅纠正误关） |
 | 设置优先级 | ✅ | ❌ | ❌ |
+| push / PR / Release 元数据 | ❌ | ❌ | ✅（按集成契约） |
+| 本地降级合并 | ❌ | ✅（用户显式指定目标） | ❌ |
+| PR 自动合并 | ❌ | ❌ | ❌ |
+| 工作区清理 | 环境能力保留 | 环境能力保留 | 收尾负责（已进上游） |
 | 改动业务代码 | ❌（T0） | ✅（限 plan 范围） | ❌（T0） |
 
 ### 1.2 标签体系
@@ -355,11 +359,14 @@ Issue(编号 N)
 
 ### 3.7 状态判定（Loop Control）
 
+集成原语：`git-ops.sh --role reviewer integration push|pr-list|pr-view|pr-create|release-view|release-create`；本地降级仅 developer 的 `integration local`。参数和矩阵见 [集成与发布](references/integration.md)。发布需独立授权且 tag + GitHub Release 两部分完成，不能随 Issue 自动发布。
+
 - **全部 PASS**：
   1. `./scripts/git-ops.sh --role reviewer issue status <N> riper-verified`；
   2. 评论总结闭环结论；
-  3. 由 QA 执行 `./scripts/git-ops.sh --role reviewer issue close <N>` 关闭 Issue（关闭权专属 QA），结束循环；
-  4. 释放认领：`./scripts/git-ops.sh issue claim <N> release`（移除 `riper-claimed` + 释放评论；闭环终态不再占用该 Issue）。
+  3. QA 按 [集成契约](references/integration.md) 执行 `integration push <N>`、PR 查重/创建/回读，并将 URL、base/head 与已验收提交评论回 Issue；默认不自动合并。离线或无推送权限仅本地合并仍保持 open，无法继续则报告并按权限转 blocked。
+  4. 仅在 PR 交付已确认（或有已进上游证据）后，由 QA 执行 `./scripts/git-ops.sh --role reviewer issue close <N>` 关闭 Issue（关闭权专属 QA），结束循环；
+  5. 释放认领：`./scripts/git-ops.sh issue claim <N> release`（移除 `riper-claimed` + 释放评论；闭环终态不再占用该 Issue）。
 - **存在 FAIL**：
   1. 登记重试计数（**防死循环：最多重试 3 次**）：`./scripts/git-ops.sh --role reviewer issue retry <N> incr`（排他写入 `riper-retry-K`，不依赖 Agent 记忆）；
   2. QA 退回计划：`./scripts/git-ops.sh --role reviewer issue status <N> riper-plan`，并评论失败分析；
