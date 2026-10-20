@@ -57,7 +57,7 @@ cmd_integration() {
       esac
       plat="$(detect_platform)" || return 1; require_cli "$plat"
       if [[ "$action" == pr-view ]]; then
-        case "$plat" in gh) gh pr view "$1" ;; glab) glab mr view "$1" ;; tea) tea_cmd pulls "$1" ;; esac
+        case "$plat" in gh) gh pr view "$1" --json url,state,baseRefName,headRefName,headRefOid ;; glab) glab mr view "$1" ;; tea) tea_cmd pulls "$1" ;; esac
         return
       fi
       num="$1"; branch="riper/$num"; db="$(default_branch)" || return 1
