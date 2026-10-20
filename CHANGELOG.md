@@ -4,6 +4,40 @@ All notable changes to stable `iloop` releases are recorded here. Releases use
 immutable `vX.Y.Z` tags; installation follows the highest stable tag rather
 than `main`.
 
+## [0.6.7] - 2026-10-20
+
+### Added
+
+- Cross-session claim mutex for auto-pick. A bare `/iloop` picks deterministically
+  (p0→p3, then number ascending) and, per protocol, writes nothing to the Issue,
+  so two parallel sessions would select the same Issue and both start work. A new
+  managed **non-exclusive** label `riper-claimed` marks an Issue as taken, and
+  auto-pick now skips claimed Issues with a stated reason — homomorphic to
+  `riper-retry-*`: the "who took it" signal lives on the Issue, not in
+  cross-session agent memory. (#24)
+- `issue claim <N> <claim|release|get>`, mirroring `issue retry`:
+  - `get` prints `claimed` / `unclaimed` — a cheap, reliable read for auto-pick
+    that keeps the claim signal out of `issue list` (source separation, like retry).
+  - `claim` writes the label **and** an audit comment carrying the git user, UTC
+    timestamp, worktree path, and branch, and **refuses to preempt** an Issue that
+    is already claimed (exit 1, echoing the existing claim) so stale claims stay a
+    human decision.
+  - `release` removes the label with a release comment and is idempotent when the
+    Issue is unclaimed.
+- The built-in label set grows from 14 to **15** (4 priority + 7 status + 3 retry
+  + 1 claim). `labels init` creates `riper-claimed` and `doctor` now fails closed
+  until it exists; the count text is synced across `SKILL.md`,
+  `references/cli-setup.md`, and both READMEs.
+
+### Changed
+
+- `issue list` excludes `riper-claimed` from the status column so a claim can
+  never be misread as a RIPER stage, and `issue label add/remove` is blocked from
+  the claim family — forcing `issue claim` so the audit comment always lands.
+- Claiming is documented honestly as a best-effort signal, not a hard lock: two
+  sessions can both read "unclaimed" before either writes. The same-machine hard
+  gate remains `workspace start`'s `riper/<N>` branch fast-fail (from 0.6.6).
+
 ## [0.6.6] - 2026-10-19
 
 ### Added
