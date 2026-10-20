@@ -107,6 +107,11 @@ Commands:
   git-ops.sh workspace status                       报告工作区隔离状态（主/linked、分支、归属 Issue、worktree 清单）
   git-ops.sh workspace start <num> [--base <ref>]   为 Issue <num> 建立隔离工作区（仓库外 worktree + riper/<num> 分支，基于上游）
   git-ops.sh workspace finish <num>                 清理 Issue <num> 的本地工作区（仅干净且已合并进上游时；不含推送/合并）
+  git-ops.sh integration push|pr-list|pr-view <N>     QA 集成原语（pr-view 参数为 PR 编号）
+  git-ops.sh integration pr-create <N> <title> <body-file>
+  git-ops.sh integration local <N> <target-branch>    开发显式本地降级；仅 linked worktree，保持 open
+  git-ops.sh integration release-view <vX.Y.Z>
+  git-ops.sh integration release-create <vX.Y.Z> <SHA>  QA GitHub Release；需独立发布授权与全套件通过
   git-ops.sh platform                               打印检测到的托管平台
   git-ops.sh doctor                                 自检：运行环境 → CLI 路由 → 安装 → 授权 → 15 个内置标签就绪
                                                     （任一项不就绪即输出指南并 exit 1）
@@ -2044,6 +2049,7 @@ cmd_workspace_finish() {
     log_error "无法确认时本脚本不会删除工作区。请先执行：git fetch origin ${db}"
     exit 1
   fi
+  git fetch origin "refs/heads/${db}:refs/remotes/origin/${db}" || { log_error "无法刷新上游，拒绝清理。"; exit 1; }
   if ! git merge-base --is-ancestor "${branch}" "origin/${db}"; then
     log_error "${branch} 尚未合并进 origin/${db}，拒绝清理（会丢失未集成的工作）。"
     log_error "请先完成集成（推送分支 + 开 PR + 合并，集成契约见 #25），再回来清理。"
@@ -2121,6 +2127,10 @@ main() {
   shift
 
   case "${cmd}" in
+    integration)
+      source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/integration.sh"
+      cmd_integration "$@"
+      ;;
     platform)
       [[ $# -eq 0 ]] || usage
       # 平台检测失败时必须显式报错退出（命令替换的失败会被 case / 子 shell 吞掉）

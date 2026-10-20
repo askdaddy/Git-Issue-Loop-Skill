@@ -150,3 +150,7 @@ the default installer. Changes to the install protocol (`INSTALL.md` or
 For the normative workflow rules, see [SKILL.md](SKILL.md). For the Chinese
 version of this introduction, see [README_CN.md](README_CN.md). Stable release
 history is recorded in [CHANGELOG.md](CHANGELOG.md).
+
+## Integration / 集成交付
+
+QA PASS → riper-verified → push + PR delivery and evidence → close. No automatic PR merge. Offline/local-only merge keeps the Issue open. Cleanup requires confirmed upstream integration; a stable publication needs both tag and GitHub Release. See [集成与发布契约](references/integration.md).
