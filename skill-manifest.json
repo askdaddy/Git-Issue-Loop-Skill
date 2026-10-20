@@ -17,7 +17,9 @@
       "templates/verify-report.md",
       "references/cli-setup.md",
       "references/lazy-ladder.md",
-      "scripts/check-update.sh"
+      "scripts/check-update.sh",
+      "references/feedback-loop.md",
+      "scripts/feedback.sh"
     ]
   },
   "distribution": {

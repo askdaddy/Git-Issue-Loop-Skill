@@ -367,6 +367,12 @@ Issue(编号 N)
   4. 重新走 [E] → [R]。
 - **重试已达上限仍有 FAIL**（`./scripts/git-ops.sh --role reviewer issue retry <N> get` 返回 `3`，此时 `incr` 也会被拒绝）：停止循环，`./scripts/git-ops.sh --role reviewer issue status <N> riper-blocked`，在 Issue 下评论说明卡点，并 `./scripts/git-ops.sh issue claim <N> release` 释放认领（本会话不再持有，待人工介入后可重新认领），等待人工介入。
 
+## 3.8 运行时反馈闭环
+
+发现角色操作被拒绝、guard 越界或 Issue 阶段证据缺失时，先保留原拒绝和任务纠偏，再按 [反馈协议](references/feedback-loop.md) 组织事实、离线草稿、去重、授权提交与维护验证。阶段交接必须检查标签、产物与未完成验收。反馈不替代 QA、不自动计入 retry；疑似问题不直接归责。
+
+`bash <Skill根>/scripts/feedback.sh draft <permission|guard|evidence> <suspected|confirmed|intercepted|false-positive>` 仅输出有限字段草稿，不联网、不落盘、不上报；所有角色可用。上游写入必须明确授权并经维护工作副本的 git-ops.sh，详见协议。
+
 ## 4. 快速用法
 
 ```
