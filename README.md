@@ -37,7 +37,9 @@ CLIs: `gh`, `glab`, and `tea`.
   shortest diff that still meets the frozen acceptance criteria, and leave a
   one-line `skipped:` comment for any legitimate detour.
 - Three exclusive Issue-label families — priority (`p0`–`p3`), RIPER status, and
-  retry count (`riper-retry-1`–`3`) — totalling 14 built-in labels that
+  retry count (`riper-retry-1`–`3`) — plus a managed non-exclusive claim label
+  (`riper-claimed`, marking an Issue as taken so parallel sessions' auto-pick
+  skips it), totalling 15 built-in labels that
   `labels init` creates idempotently. It also canonicalizes repository-level
   priority variants such as `P0` without losing their open or closed Issue
   associations; migration failures stop before the repository variant is

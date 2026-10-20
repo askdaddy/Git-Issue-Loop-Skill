@@ -63,8 +63,9 @@ description: >-
 - **唯一事实来源**：Issue（正文 + 评论 + 标签）为主；本地 `docs/issues/<N>/` 仅为**降级 fallback，不是持久化副本**——远程可用时不得双写。
 - **降级落盘位置**：`docs/issues/<N>/`（spec.md / design.md / plan.md / verify-report.md），基于 `templates/` 填充，仅当远程 Issue 不可用时使用；用户显性指定时以用户为准。
 - **测试脚本位置**：QA 的黑盒测试脚本默认落 `test/`；用户显性指定时以用户为准。
-- **Git 操作**：一律通过 `scripts/git-ops.sh` 执行，禁止直接调用 `gh` / `glab` / `tea`。Agent 调用时**必须携带 `--role <当前角色>`**，脚本按 §1.1 权限矩阵与 §1.2 标签体系硬性校验。子命令清单：`issue list|get|comment|create|close|reopen|priority|status|retry|label`、`labels init`、`guard <role> [N]`、`workspace status|start|finish`、`platform`、`doctor`。
+- **Git 操作**：一律通过 `scripts/git-ops.sh` 执行，禁止直接调用 `gh` / `glab` / `tea`。Agent 调用时**必须携带 `--role <当前角色>`**，脚本按 §1.1 权限矩阵与 §1.2 标签体系硬性校验。子命令清单：`issue list|get|comment|create|close|reopen|priority|status|retry|claim|label`、`labels init`、`guard <role> [N]`、`workspace status|start|finish`、`platform`、`doctor`。
 - **工作区隔离（并行会话必须遵守）**：一 Issue 一 worktree 一分支。开工前先 `./scripts/git-ops.sh workspace start <N>`，脚本会在**仓库外** `../.iloop-worktrees/<repo>/<N>` 建 worktree 并挂 `riper/<N>` 分支。基分支恒为 `origin/<默认分支>`，**不基于本地分支**——本地分支可能带着别的会话尚未推送的提交。已经在 linked worktree 内时**不嵌套创建**，只把当前工作区规范化到 `riper/<N>`（detached HEAD 就地挂分支并保留原提交）。收尾用 `workspace finish <N>`（仅当工作区干净且已合并进 `origin/<默认分支>`，否则拒绝清理）；推送 / PR / 合并属集成阶段，不在本命令内。
+- **认领互斥（并行会话必须遵守）**：`workspace start <N>` 成功（先过同机 `riper/<N>` 分支快失败这道硬闸）后，立即 `./scripts/git-ops.sh issue claim <N> claim` 写远端认领信号（`riper-claimed` 标签 + 审计评论），使其他会话的自动挑选跳过本 Issue；若 `claim` 报告"已被认领"则**不抢占**，停下交回用户。释放在闭环终态执行（见 §3.7）。认领是尽力而为信号、非硬锁（详见 §1.2(4)）。
 - **cwd 会被宿主重置**：`workspace start` 输出的是 worktree 的**绝对路径**，宿主可能在每次工具调用后把 cwd 重置回会话起点。故后续所有仓库内命令都必须以该绝对路径为 cwd（`cd <绝对路径> && …` 前缀，或使用工具自带的工作目录参数），**不得假设 cwd 会延续**；不确定时先跑 `./scripts/git-ops.sh workspace status` 确认自己在哪个工作树、哪条分支、归属哪个 Issue。
 - **平台路由**：脚本通过 `git remote -v` 自动检测并路由到对应 CLI，Agent 无需关心托管平台差异。
 - **前置自检**：进入循环前先跑 `./scripts/git-ops.sh doctor`（检查运行环境 + CLI 安装 + 授权状态）。不就绪时脚本会输出安装/授权指南并 `exit 1`，Agent 必须中止循环、把指南**原样呈现给用户**，待用户完成后重跑 `doctor` 再继续；完整指南见 `references/cli-setup.md`。
@@ -142,8 +143,22 @@ description: >-
 
 唯一入口：`./scripts/git-ops.sh --role reviewer issue retry <N> <incr|get|reset>`（脚本自动排他清理同族）。`issue label` 子命令被禁止触碰本族。
 
-**（4）自由标签（可选，不排他）**：Agent 可自行定义用于上下文召回，如 `module/auth`、`type/bug`、`area/cli`。
-通过 `issue label <N> add|remove <标签>` 操作；脚本禁止用该子命令触碰上述三个互斥族（优先级 / 状态 / 重试）。
+**（4）认领族（受管，不排他，多会话互斥信号）**
+
+`riper-claimed`：标记某 Issue 已被某会话认领，自动挑选跳过之。与 `riper-retry-*` 同构——把"谁认领了"落到 Issue 标签，不依赖 Agent 跨会话记忆。它是**受管内置标签**（由 `labels init` 创建、`doctor` 校验，故内置标签总数为 15 = 4 + 7 + 3 + 1），但**非排他**（不属上述三互斥族，`is_priority/status/retry_label` 均不匹配它）。
+
+| 操作 | 可用角色 | 说明 |
+|------|----------|------|
+| `issue claim <N> claim` | 三角色 | 写 `riper-claimed` 标签 + 一条审计评论（会话标识 / UTC 时间戳 / worktree 路径 / 分支）；**若已被认领则拒绝并回显既有认领，不抢占** |
+| `issue claim <N> release` | 三角色 | 移除标签 + 释放评论；未认领时幂等只报告 |
+| `issue claim <N> get` | 三角色（只读） | 输出 `claimed` / `unclaimed`，供自动挑选廉价可靠读取（同构 `retry get`） |
+
+唯一入口：`./scripts/git-ops.sh issue claim <N> <claim|release|get>`。`issue label` 子命令被禁止触碰本族（保证标签与审计评论同时落地）。
+
+**认领时机与局限**：认领应在 `workspace start <N>` 成功（先过同机分支快失败这道硬闸）之后再写远端信号；释放在闭环终态（`riper-verified`）或转 `riper-blocked` 时执行。**陈旧认领（长时间无状态推进）只报告、不自动抢占**——抢占属影响他人工作的动作，处置权交回用户。**认领是尽力而为的信号、非硬分布式锁**：两会话可能都读到"未认领"而先后写入，真·同时竞态无法靠标签消除，同机硬闸是 workspace 的 `riper/<N>` 分支快失败。
+
+**（5）自由标签（可选，不排他）**：Agent 可自行定义用于上下文召回，如 `module/auth`、`type/bug`、`area/cli`。
+通过 `issue label <N> add|remove <标签>` 操作；脚本禁止用该子命令触碰上述受管族（优先级 / 状态 / 重试 / 认领）。
 
 ## 2. SDD 核心原则（Spec-Driven Development，不可违反）
 
@@ -164,7 +179,7 @@ description: >-
    - `status=untagged`（exit 2）→ 说明当前为非稳定安装并列出 `latest_tag`；默认继续本轮，用户也可选择改去安装稳定版。
    - 检查失败（exit 1，含网络 / 非 git / 无稳定 tag）→ **必须**把脚本给出的 git 失败原因（`check-update: git: …` 行）与 `local_ref`（当前已安装的版本）一并转述给用户，并明确说明**「本次无法确认是否为最新版」**；声明后**不阻塞**，继续 doctor。禁止只说「更新检查失败」了事。
 2. 执行 `./scripts/git-ops.sh doctor`（在**目标项目**仓库根）：依次确认运行环境（macOS / Windows Git Bash）、remote 路由到的 CLI、CLI 已安装、CLI 已授权。
-3. doctor 通过后，若本次会话尚未执行过，运行 `./scripts/git-ops.sh labels init`（幂等）：确保优先级 / 状态 / 重试所需的 14 个内置标签（4 优先级 + 7 状态 + 3 重试）在平台上存在，并规范化仓库级 `P0`–`P3` 等优先级大小写变体；迁移其 open/closed Issue 关联并回读验证后才删除变体，任一步失败即保留变体并 `exit 1`。doctor 也会检查这套标签是否就绪，缺失即 `exit 1` 并提示运行 `labels init`。
+3. doctor 通过后，若本次会话尚未执行过，运行 `./scripts/git-ops.sh labels init`（幂等）：确保优先级 / 状态 / 重试 / 认领所需的 15 个内置标签（4 优先级 + 7 状态 + 3 重试 + 1 认领）在平台上存在，并规范化仓库级 `P0`–`P3` 等优先级大小写变体；迁移其 open/closed Issue 关联并回读验证后才删除变体，任一步失败即保留变体并 `exit 1`。doctor 也会检查这套标签是否就绪，缺失即 `exit 1` 并提示运行 `labels init`。
 4. **全部通过** → 进入 §3.0.1 启动分发。**禁止在分发完成之前读取任何 `roles/*.md`。**
 5. **CLI 缺失或未授权** → 立即中止，把脚本输出的安装/授权指南（或 `references/cli-setup.md` 对应章节）原样交给用户，说明需要完成的具体动作；用户确认完成后重跑 `doctor`，通过再从中断阶段继续。
 6. 严禁绕行：不得改用 curl + REST API、不得猜测/代填 token、不得跳过 Issue 侧的读写步骤。
@@ -195,10 +210,10 @@ doctor / `labels init` 通过后、加载任何角色之前执行。本层是协
 
 **自动挑选**：只读、无角色、不写回 Issue。用户显性指定编号 / 目标 / 阶段意图时不触发本路径。
 
-1. **取候选四元组**（仅经 `git-ops.sh` 只读子命令；**禁止**为此提前加载任何 `roles/*.md`，禁止写状态/写标签/写评论）：`issue list --state open` 给出编号、优先级、RIPER 状态；retry 值逐个调 `issue retry <N> get`（列表**不含** retry 列）。若列表无标签列（glab/tea 降级，优先级/状态显示 `(无)`），改逐条 `issue get <N>` 读真实标签，并在报告中**标注该降级依据**，禁止按 `(无)` 占位静默误选。<!-- lazy-ladder: 逐条 retry get，open 量大时改 issue list 输出补 retry 列 -->
+1. **取候选四元组**（仅经 `git-ops.sh` 只读子命令；**禁止**为此提前加载任何 `roles/*.md`，禁止写状态/写标签/写评论）：`issue list --state open` 给出编号、优先级、RIPER 状态；retry 值逐个调 `issue retry <N> get`、认领状态逐个调 `issue claim <N> get`（列表**不含** retry / 认领列，二者单独读；`riper-claimed` 已被排除出状态列，不会污染 RIPER 状态）。若列表无标签列（glab/tea 降级，优先级/状态显示 `(无)`），改逐条 `issue get <N>` 读真实标签，并在报告中**标注该降级依据**，禁止按 `(无)` 占位静默误选。<!-- lazy-ladder: 逐条 retry get / claim get，open 量大时改 issue list 输出补 retry / 认领列 -->
 2. **排序**：p0 → p1 → p2 → p3 → 无优先级；同键按编号升序（更老的先收尾）。该顺序由本步负责，不依赖 `issue list` 的打印顺序。
-3. **跳过规则**：`riper-blocked`（等人工介入）、`riper-retry-3`（重试超限）、`riper-verified` 但未关闭（异常态，仅提示人工关闭/重开，不改状态），三者均不参选并须写明原因。
-4. **呈报并等确认**：输出候选清单，每条含 `编号 / 优先级 / RIPER 状态 / retry 值 / 是否跳过及原因`，末行给出选中项与一句话理由；**停在此处等用户确认或改选**，不得选完直接开工。改选任一编号等同显式 `/iloop <编号>`，重新进第 1 层分发。
+3. **跳过规则**：`riper-blocked`（等人工介入）、`riper-retry-3`（重试超限）、`riper-verified` 但未关闭（异常态，仅提示人工关闭/重开，不改状态）、`riper-claimed`（已被其他会话认领，`issue claim <N> get` 输出 `claimed`），四者均不参选并须写明原因。陈旧认领只报告、不自动抢占（抢占属影响他人工作的动作，交回用户）。
+4. **呈报并等确认**：输出候选清单，每条含 `编号 / 优先级 / RIPER 状态 / retry 值 / 认领状态 / 是否跳过及原因`，末行给出选中项与一句话理由；**停在此处等用户确认或改选**，不得选完直接开工。改选任一编号等同显式 `/iloop <编号>`，重新进第 1 层分发。
 5. **终止分支**：无 open Issue → 报告空态并指向 `[G]` 目标登记，**禁止**自动建 Issue、不加载角色；全部候选被跳过 → 报告各自卡点原因后停止，不改任何状态（对齐 `riper-blocked 不参与前进`）。
 6. 挑选报告是对话内产物，**不落盘、不写 Issue 评论**（避免污染 Issue 这一唯一事实来源）。
 
@@ -343,13 +358,14 @@ Issue(编号 N)
 - **全部 PASS**：
   1. `./scripts/git-ops.sh --role reviewer issue status <N> riper-verified`；
   2. 评论总结闭环结论；
-  3. 由 QA 执行 `./scripts/git-ops.sh --role reviewer issue close <N>` 关闭 Issue（关闭权专属 QA），结束循环。
+  3. 由 QA 执行 `./scripts/git-ops.sh --role reviewer issue close <N>` 关闭 Issue（关闭权专属 QA），结束循环；
+  4. 释放认领：`./scripts/git-ops.sh issue claim <N> release`（移除 `riper-claimed` + 释放评论；闭环终态不再占用该 Issue）。
 - **存在 FAIL**：
   1. 登记重试计数（**防死循环：最多重试 3 次**）：`./scripts/git-ops.sh --role reviewer issue retry <N> incr`（排他写入 `riper-retry-K`，不依赖 Agent 记忆）；
   2. QA 退回计划：`./scripts/git-ops.sh --role reviewer issue status <N> riper-plan`，并评论失败分析；
   3. PM 修订计划（主路径在 Issue 评论中修订；降级模式下修订本地 `plan.md`）并同步评论；
   4. 重新走 [E] → [R]。
-- **重试已达上限仍有 FAIL**（`./scripts/git-ops.sh --role reviewer issue retry <N> get` 返回 `3`，此时 `incr` 也会被拒绝）：停止循环，`./scripts/git-ops.sh --role reviewer issue status <N> riper-blocked`，在 Issue 下评论说明卡点，等待人工介入。
+- **重试已达上限仍有 FAIL**（`./scripts/git-ops.sh --role reviewer issue retry <N> get` 返回 `3`，此时 `incr` 也会被拒绝）：停止循环，`./scripts/git-ops.sh --role reviewer issue status <N> riper-blocked`，在 Issue 下评论说明卡点，并 `./scripts/git-ops.sh issue claim <N> release` 释放认领（本会话不再持有，待人工介入后可重新认领），等待人工介入。
 
 ## 4. 快速用法
 
@@ -369,10 +385,11 @@ Issue(编号 N)
 **常用脚本子命令（一律经 `scripts/git-ops.sh`，携带 `--role`）**：
 
 ```
-./scripts/git-ops.sh labels init                                  → 初始化 14 个内置标签并规范化仓库级优先级大小写变体（幂等；新仓库首次必跑）
+./scripts/git-ops.sh labels init                                  → 初始化 15 个内置标签并规范化仓库级优先级大小写变体（幂等；新仓库首次必跑）
 ./scripts/git-ops.sh issue list [--state open|closed|all] [--status <riper-*>] [--priority <p0..p3>]
                                                                   → 列出 Issue，按优先级 p0→p3 排序（glab/tea 无标签列时降级）
 ./scripts/git-ops.sh --role reviewer issue retry <N> <incr|get|reset> → 重试计数持久化（incr 仅 QA；get/reset 不限角色）
+./scripts/git-ops.sh issue claim <N> <claim|release|get>          → 认领互斥（非排他 riper-claimed；claim 写标签+审计评论，已认领则拒绝抢占；release 释放；get 读 claimed/unclaimed）
 ./scripts/git-ops.sh guard <role> [N]                             → 可写区域越界自检（提交前必跑；越界 exit 1；给出 N 则同时校验当前分支是否为 riper/<N>）
 ./scripts/git-ops.sh workspace status                             → 报告当前在哪个工作树/分支、归属哪个 Issue、worktree 清单（只读，随时可跑）
 ./scripts/git-ops.sh workspace start <N>                          → 为 Issue N 建隔离工作区：仓库外 ../.iloop-worktrees/<repo>/<N> + riper/<N> 分支，基于 origin/<默认分支>
