@@ -21,7 +21,7 @@ fail() { echo "FAIL $1"; FAILS=$((FAILS + 1)); }
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-ALL14="p0 p1 p2 p3 riper-research riper-innovation riper-plan riper-execute riper-review riper-verified riper-blocked riper-retry-1 riper-retry-2 riper-retry-3"
+ALL15="p0 p1 p2 p3 riper-research riper-innovation riper-plan riper-execute riper-review riper-verified riper-blocked riper-retry-1 riper-retry-2 riper-retry-3 riper-claimed"
 
 # ===========================================================================
 # stub: gh — state-backed labels so add/remove/view/list are consistent.
@@ -241,7 +241,7 @@ if [[ -n "$BINBASH" ]]; then
   # smoke-run new commands under /bin/bash (gh stub) — must not syntax-error
   export GH_LABELDIR="$WORK/ghlab" GH_ISSUES="$WORK/ghissues.tsv" GH_LABELS="$WORK/ghrepolabels"
   mkdir -p "$GH_LABELDIR"; printf '1\tOPEN\tissue one\n' > "$GH_ISSUES"; : > "$GH_LABELDIR/1"
-  printf '%s\n' $ALL14 > "$GH_LABELS"
+  printf '%s\n' $ALL15 > "$GH_LABELS"
   if ( cd "$GH_REPO" && PATH="$WORK/ghbin:$PATH" /bin/bash "$GITOPS" issue list >/dev/null 2>&1 ); then
     pass "/bin/bash issue list runs"
   else
@@ -259,7 +259,7 @@ fi
 echo "=== (c-1) issue list on gh: priority sort, filters, validation ==="
 export GH_LABELDIR="$WORK/ghlab" GH_ISSUES="$WORK/ghissues.tsv" GH_LABELS="$WORK/ghrepolabels"
 mkdir -p "$GH_LABELDIR"
-printf '%s\n' $ALL14 > "$GH_LABELS"
+printf '%s\n' $ALL15 > "$GH_LABELS"
 # fixture: #1 p0/execute, #2 p1/research, #3 (no priority)/plan, #4 p0/verified
 printf '1\tOPEN\talpha\n2\tOPEN\tbeta\n3\tOPEN\tgamma\n4\tOPEN\tdelta\n' > "$GH_ISSUES"
 printf 'p0\nriper-execute\n'   > "$GH_LABELDIR/1"
@@ -291,7 +291,7 @@ probe "$GH_REPO" "$WORK/ghbin" issue list --state bogus
 
 echo "=== (c-1b) issue list degradation on glab/tea (no label column) ==="
 export GLAB_LABELDIR="$WORK/glablab" GLAB_ISSUES="$WORK/glabissues.tsv" GLAB_LABELS="$WORK/glabrepolabels"
-mkdir -p "$GLAB_LABELDIR"; printf '%s\n' $ALL14 > "$GLAB_LABELS"
+mkdir -p "$GLAB_LABELDIR"; printf '%s\n' $ALL15 > "$GLAB_LABELS"
 printf '1\topen\talpha\n2\topen\tbeta\n' > "$GLAB_ISSUES"
 probe "$GLAB_REPO" "$WORK/glabbin" issue list
 if [[ "$RC" -eq 0 ]]; then pass "glab issue list exit 0 (degraded)"; else fail "glab issue list rc=$RC"; fi
@@ -301,7 +301,7 @@ if [[ "$RC" -eq 0 ]]; then pass "glab --priority ignored without crash (exit 0)"
 printf '%s' "$ERR" | grep -qi 'glab\|tea\|标签' && pass "glab emits label-unavailable notice" || fail "glab missing degradation notice"
 
 export TEA_LABELDIR="$WORK/tealab" TEA_ISSUES="$WORK/teaissues.tsv" TEA_LABELS="$WORK/tearepolabels"
-mkdir -p "$TEA_LABELDIR"; printf '%s\n' $ALL14 > "$TEA_LABELS"
+mkdir -p "$TEA_LABELDIR"; printf '%s\n' $ALL15 > "$TEA_LABELS"
 printf '1\topen\talpha\n' > "$TEA_ISSUES"
 probe "$TEA_REPO" "$WORK/teabin" issue list
 [[ "$RC" -eq 0 ]] && pass "tea issue list exit 0 (degraded)" || fail "tea issue list rc=$RC"
@@ -430,27 +430,27 @@ rc=0; ( cd "$GREPO" && bash "$GITOPS" guard >/dev/null 2>&1 ) || rc=$?
 #############################################################################
 echo "=== (c-4) doctor label-readiness: full / partial / fail ==="
 export GH_LABELS="$WORK/ghrepolabels"
-printf '%s\n' $ALL14 > "$GH_LABELS"
+printf '%s\n' $ALL15 > "$GH_LABELS"
 probe "$GH_REPO" "$WORK/ghbin" doctor
-[[ "$RC" -eq 0 ]] && pass "doctor full 14 labels -> exit 0" || fail "doctor full rc=$RC"
-printf '%s' "$OUT" | grep -q '14/14' && pass "doctor prints 14/14" || fail "doctor missing 14/14"
+[[ "$RC" -eq 0 ]] && pass "doctor full 15 labels -> exit 0" || fail "doctor full rc=$RC"
+printf '%s' "$OUT" | grep -q '15/15' && pass "doctor prints 15/15" || fail "doctor missing 15/15"
 printf 'bug\ndocumentation\n' > "$GH_LABELS"
 probe "$GH_REPO" "$WORK/ghbin" doctor
 [[ "$RC" -eq 1 ]] && pass "doctor partial -> exit 1" || fail "doctor partial rc=$RC"
 printf '%s' "$ERR$OUT" | grep -q 'labels init' && pass "doctor partial hints labels init" || fail "doctor partial missing labels-init hint"
-printf '%s\n' $ALL14 > "$GH_LABELS"; GH_LABELS_FAIL=1 probe "$GH_REPO" "$WORK/ghbin" doctor
+printf '%s\n' $ALL15 > "$GH_LABELS"; GH_LABELS_FAIL=1 probe "$GH_REPO" "$WORK/ghbin" doctor
 [[ "$RC" -eq 1 ]] && pass "doctor label-list fail -> exit 1" || fail "doctor fail rc=$RC"
 printf '%s' "$ERR$OUT" | grep -q '无法获取远端标签' && pass "doctor fail says network/permission (not 'missing')" || fail "doctor fail wrong wording"
 printf '%s' "$ERR$OUT" | grep -q '缺失以下标签' && fail "doctor fail misreported as missing labels" || pass "doctor fail does NOT misreport missing"
 unset GH_LABELS_FAIL
 
 echo "=== (c-4b) doctor label-readiness routing on glab + tea ==="
-export GLAB_LABELS="$WORK/glabrepolabels"; printf '%s\n' $ALL14 > "$GLAB_LABELS"
+export GLAB_LABELS="$WORK/glabrepolabels"; printf '%s\n' $ALL15 > "$GLAB_LABELS"
 probe "$GLAB_REPO" "$WORK/glabbin" doctor
-[[ "$RC" -eq 0 ]] && pass "glab doctor 14/14 -> exit 0" || fail "glab doctor rc=$RC err=$ERR"
-export TEA_LABELS="$WORK/tearepolabels"; printf '%s\n' $ALL14 > "$TEA_LABELS"
+[[ "$RC" -eq 0 ]] && pass "glab doctor 15/15 -> exit 0" || fail "glab doctor rc=$RC err=$ERR"
+export TEA_LABELS="$WORK/tearepolabels"; printf '%s\n' $ALL15 > "$TEA_LABELS"
 probe "$TEA_REPO" "$WORK/teabin" doctor
-[[ "$RC" -eq 0 ]] && pass "tea doctor 14/14 -> exit 0" || fail "tea doctor rc=$RC err=$ERR"
+[[ "$RC" -eq 0 ]] && pass "tea doctor 15/15 -> exit 0" || fail "tea doctor rc=$RC err=$ERR"
 GLAB_LABELS_FAIL=1 probe "$GLAB_REPO" "$WORK/glabbin" doctor
 [[ "$RC" -eq 1 ]] && pass "glab doctor label-list fail -> exit 1" || fail "glab doctor fail rc=$RC"
 

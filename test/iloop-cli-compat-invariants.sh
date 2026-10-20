@@ -139,11 +139,12 @@ probe() {
 echo "=== step 1: tea check_auth — no SIGPIPE false-negative under pipefail ==="
 
 # 1a: behavioral — doctor on gitea fixture must pass 20/20 (random 141 == bug).
-# NOTE: since Issue #1 step 16, doctor also checks label-readiness (14/14) AFTER
-# the auth step. Seed TEA_STATE with all 14 labels so this probe isolates the
+# NOTE: since Issue #1 step 16, doctor also checks label-readiness (15/15) AFTER
+# the auth step. Seed TEA_STATE with all 15 labels so this probe isolates the
 # check_auth SIGPIPE behaviour it was written for (auth runs before label check).
 printf '%s\n' p0 p1 p2 p3 riper-research riper-innovation riper-plan riper-execute \
   riper-review riper-verified riper-blocked riper-retry-1 riper-retry-2 riper-retry-3 \
+  riper-claimed \
   > "$WORK/tea_doctor_labels.state"
 TEA_STATE="$WORK/tea_doctor_labels.state"; export TEA_STATE
 ok=0
@@ -191,7 +192,7 @@ fi
 #############################################################################
 echo "=== step 2: glab label create/edit — --name first, positional fallback ==="
 
-# 2a: new glab (1.118, requires --name): first init creates all 14, no FAILED.
+# 2a: new glab (1.118, requires --name): first init creates all 15, no FAILED.
 : > "$WORK/glab_new.state"
 GLAB_MODE=new; export GLAB_MODE
 GLAB_STATE="$WORK/glab_new.state"; export GLAB_STATE
@@ -228,7 +229,7 @@ TEA_STATE="$WORK/tea.state"; export TEA_STATE
 probe "$GITEA_REPO" "$WORK/teabin" labels init
 if [[ "$RC" -eq 0 ]]; then pass "tea first labels init exits 0"; else fail "tea first labels init rc=$RC; err=$ERR"; fi
 first_creates="$(grep -c 'labels create' "$LOG" || true)"
-if [[ "$first_creates" -eq 14 ]]; then pass "tea first init created 14 labels"; else fail "tea first init created ${first_creates} labels (want 14)"; fi
+if [[ "$first_creates" -eq 15 ]]; then pass "tea first init created 15 labels"; else fail "tea first init created ${first_creates} labels (want 15)"; fi
 
 : > "$LOG"
 probe "$GITEA_REPO" "$WORK/teabin" labels init
@@ -240,7 +241,7 @@ if printf '%s' "$OUT" | grep -q 'FAILED'; then fail "tea second init reported FA
 dup="$(sort "$WORK/tea.state" | uniq -d | tr '\n' ' ')"
 if [[ -z "$dup" ]]; then pass "tea label state has no duplicate names after two inits"; else fail "duplicate tea labels: $dup"; fi
 state_n="$(grep -c . "$WORK/tea.state" || true)"
-if [[ "$state_n" -eq 14 ]]; then pass "tea state holds exactly 14 labels"; else fail "tea state holds ${state_n} labels (want 14)"; fi
+if [[ "$state_n" -eq 15 ]]; then pass "tea state holds exactly 15 labels"; else fail "tea state holds ${state_n} labels (want 15)"; fi
 unset TEA_STATE
 
 #############################################################################
