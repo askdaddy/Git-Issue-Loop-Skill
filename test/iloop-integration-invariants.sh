@@ -68,7 +68,8 @@ for host in github.com gitlab.com codeberg.org; do
  bash "$G" --role reviewer integration pr-create 25 'Title' "$W/body" > /dev/null
 done
 for expected in 'gh pr create --head riper/25 --base main' 'glab mr create --source-branch riper/25 --target-branch main' 'tea pulls create --head riper/25 --base main'; do [[ "$(cat "$CALLS")" == *"$expected"* ]]; done
-echo 'PASS explicit branch push and three-platform PR routing'
+[[ "$(cat "$CALLS")" == *'gh pr view 7 --json url,state,baseRefName,headRefName,headRefOid'* ]]
+echo 'PASS explicit branch push and three-platform PR routing; GitHub delivery metadata requested'
 git remote set-url origin https://github.com/owner/repo.git
 before="$(wc -l < "$CALLS")"
 if REMOTE_SHA=bad bash "$G" --role reviewer integration pr-create 25 Title "$W/body" > /dev/null 2>&1; then exit 1; fi
