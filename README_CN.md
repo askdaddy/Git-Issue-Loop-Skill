@@ -2,6 +2,8 @@
 
 [English](README.md)
 
+当前稳定版：[v0.6.10](https://github.com/askdaddy/Git-Issue-Loop-Skill/releases/tag/v0.6.10)。版本变更见 [CHANGELOG.md](CHANGELOG.md)。
+
 `iloop` 是一个面向 Agent 的 Issue 驱动 RIPER 研发闭环 Skill：
 **目标登记（Goal）→ 研究（Research）→ 创新（Innovation）→ 计划（Plan）→ 执行（Execute）→ 审查（Review）**。
 给一句目标也可以：Planner 会先把目标整理成草稿、经你确认后登记为 Issue，再进入闭环（目标直入）。
@@ -12,8 +14,8 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
 ## 提供的能力
 
 - `/iloop` 入口，可执行完整 RIPER 闭环、仅计划、验收、环境自检，或 `help`（输出用法速览 + 本地已安装版本）。
-- 裸 `/iloop` 自动挑选：只读扫描 open Issue，按 `p0`→`p3`、同优先级编号升序排序，跳过阻塞 / 重试超限 / 已验收未关闭者，呈报候选清单、选择理由与跳过项；**等用户确认后**才加载角色，且每次调用只处理 1 个 Issue。
-- 启动分发：编号入口先按 RIPER 状态（并对产物）分发角色，0 帧切入当前阶段，不总是从研究起手。
+- 裸 `/iloop` 自动挑选：只读扫描 open Issue，按 `p0`→`p3`、同优先级编号升序排序，跳过阻塞 / 重试超限 / 已验收未关闭 / 已认领者，呈报候选清单、选择理由与跳过项；**等用户确认后**才加载角色，且每次调用只处理 1 个 Issue。
+- 启动分发：编号入口先判断接入需要，再按 RIPER 状态与阶段产物续跑。外部或来源未知的报告先由 Planner 查证、最小修正标签，保留合法进度。
 - 启动时对照官方仓库最高稳定 tag 检查 Skill 是否有更新；有则询问是否升级，不自动切换。
 - 目标直入：给 `/iloop` 一句目标而非 Issue 编号，Planner 会整理草稿、经确认后创建 Issue 并设优先级，再经分发进入闭环（新建 Issue 会落入研究）。
 - 严格角色分工：Planner 负责规范和计划，Developer 按已批准计划实施，Reviewer 进行黑盒验收。
@@ -23,7 +25,31 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
 - T0 硬边界：Planner 与 Reviewer 禁改业务代码；提交前 `guard <role>` 会用 `git status` 比对角色可写区域，越界即 `exit 1`。
 - `scripts/git-ops.sh` 根据 `git remote` 自动识别平台、调用官方 CLI、按角色硬性校验 Issue 操作权限，且拒绝改走 REST API 或代填凭据。
 - 面向并行会话的按 Issue 工作区隔离：只有分支不等于隔离——共用一个克隆的会话共享同一个 HEAD 与 index 锁。因此 `workspace start <N>` 会在**仓库外** `../.iloop-worktrees/<repo>/<N>` 建一个真正的 `git worktree`，挂上 `riper/<N>` 分支，基分支恒为 `origin/<默认分支>` 而**不是本地分支**，所以不会继承别的会话尚未推送的提交。`workspace status` 只读报告你在哪个工作树、哪条分支、归属哪个 Issue；`workspace finish <N>` 仅在工作区干净且已合并进上游时才清理，否则拒绝而不是丢弃任何一方；`guard <role> <N>` 会额外校验当前分支是否就是 `riper/<N>`。
-- `test/` 下 15 个黑盒不变量测试套件，以 stub `gh` / `glab` / `tea` 在一次性仓库中驱动。
+- 运行时反馈：角色操作被拒绝、工作区越界或 Issue 阶段证据缺失时，先纠偏任务，再生成脱敏离线草稿；向维护上游提交须明确授权。
+- QA 通过核验后的 PR 交付，合并与发布另需授权；仅本地交付时 Issue 保持 open。
+- `test/` 下 19 组 shell 不变量测试，覆盖 stub CLI 行为与契约检查；第三方接入场景走查属于协议审阅，不等同于独立 Agent 端到端测试。
+
+## 第三方 Issue 接入
+
+`/iloop <N>` 和裸 `/iloop` 经确认的目标都会先判断是否需要接入。外部或来源未知、尚无有效接入记录的 Issue 交给 Planner，先查证，再修标签：
+
+1. 读取正文、评论、来源与既有阶段证据。缺陷调查复现条件与根因，需求核对场景与范围；区分事实、假设和未知，信息不足时暂停澄清。
+2. 在原 Issue 记录查证结论，按角色权限最小修正优先级与阶段标签。保留无关标签、合法阶段进度、重试计数和认领历史，写后回读核验。
+3. 回到常规 RIPER 分发。复用有效接入证据，仅复核实质变化；接入记录不替代规格或冻结计划。
+
+`issue get <N> --strict` 在正文或评论的 CLI 调用失败时停止，不保证分页完整或内容语义正确。详见[接入协议](references/issue-intake.md)与[接入记录模板](templates/intake.md)。
+
+## 运行时反馈闭环
+
+角色操作被拒绝、guard 越界或阶段证据缺失时，先纠偏当前任务。`scripts/feedback.sh draft` 仅输出有限字段的离线草稿，不写文件、不自动上报。向维护仓库写入前，Agent 必须脱敏、查重，并取得对本次写入的授权。
+
+正向结果包括成功拦截、安全恢复、反馈促成回归修复和误报纠正。修复发布后仍处于“待观察”，有后续运行证据才能标为“已验证”。反馈不替代产品验收，也不自动消耗 QA 重试次数。详见[反馈协议](references/feedback-loop.md)。
+
+## 集成交付与发布
+
+QA PASS → `riper-verified` → 推送并核验 PR 交付 → 写回证据 → 关闭 Issue 并释放认领。验收通过、PR 交付、进入上游与版本发布是不同里程碑。离线或仅本地合并时 Issue 保持 open；清理工作区要求确认已进入上游。
+
+合并 PR 与稳定版发布另需授权。完整稳定发布必须在全套测试通过后，创建新 tag 和对应的 GitHub Release。详见[集成与发布契约](references/integration.md)。
 
 ## 安装最新稳定版
 
@@ -49,6 +75,16 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
 3. 若自检提示缺少 CLI 或未授权，请由使用者自行完成安装和授权；不要将 token 写入仓库，也不要要求 Agent 代填凭据。
 4. 输入 `/iloop`：不带参数时会自动挑选最该处理的 1 个 open Issue，并先呈报候选清单与理由等你确认；也可以直接给 Issue 编号、给一句目标，或让 Agent 只排计划、只做验收。
 
+常用调用：
+
+| 调用 | 行为 |
+|---|---|
+| `/iloop` | 呈报候选并等待确认，每次处理一个 Issue。 |
+| `/iloop #44` | 读取目标、判断接入需要，再按证据续跑当前阶段。 |
+| `/iloop 我要实现 X` | 先起草目标 Issue，经确认后创建。 |
+| `/iloop help` | 仅显示用法与本地版本，不进入闭环。 |
+| `排 plan，不要执行` | 在请求范围内推进，计划完成后停止。 |
+
 首次在一个仓库中使用时，可初始化标签体系：
 
 ```bash
@@ -72,24 +108,17 @@ INSTALL.md               Agent 管理的 Git 安装协议
 skill-manifest.json      机器可读的安装契约
 scripts/git-ops.sh       平台路由、Issue 操作与安全约束
 scripts/check-update.sh  对照远端最高稳定 tag 检查已安装 Skill 是否有更新
+scripts/feedback.sh      生成有限字段的离线反馈草稿
 roles/                   Planner、Developer、Reviewer 的角色说明
-templates/               spec、design、plan、verify-report 模板
-references/              CLI 配置说明与最少代码梯子
-test/                    黑盒不变量测试套件（stub gh / glab / tea）
+templates/               intake、spec、design、plan、verify-report 模板
+references/              CLI 配置、第三方接入、反馈、集成与最少代码梯子
+test/                    shell 不变量测试与第三方接入协议走查
 CHANGELOG.md             稳定版本变更记录
 docs/issues/<N>/         降级落盘的阶段文档，仅当远程 Issue 平台不可用时写入
 ```
 
 ## 稳定版发布约定
 
-`main` 是开发分支。每个稳定版都必须创建新的、不可复用的 `vX.Y.Z` tag，并应发布对应的 GitHub Release 记录变更说明。预发布版本必须使用类似 `-beta.1` 的 SemVer 后缀，默认安装器会自动跳过。改动安装协议（`INSTALL.md` 或 `skill-manifest.json` 的 `installation`）必须随新的稳定 `vX.Y.Z` tag 发布。
+`main` 是开发分支。每个稳定版都必须创建新的、不可复用的 `vX.Y.Z` tag，并发布对应的 GitHub Release 记录变更说明。预发布版本必须使用类似 `-beta.1` 的 SemVer 后缀，默认安装器会自动跳过。改动安装协议（`INSTALL.md` 或 `skill-manifest.json` 的 `installation`）必须随新的稳定 `vX.Y.Z` tag 发布。
 
 规范性工作流规则见 [SKILL.md](SKILL.md)。英文版项目介绍见 [README.md](README.md)，稳定版本历史见 [CHANGELOG.md](CHANGELOG.md)。
-
-## Integration / 集成交付
-
-QA PASS → riper-verified → push + PR delivery and evidence → close. No automatic PR merge. Offline/local-only merge keeps the Issue open. Cleanup requires confirmed upstream integration; a stable publication needs both tag and GitHub Release. See [集成与发布契约](references/integration.md).
-
-## Third-party Issue intake / 第三方接入
-
-Both `/iloop <N>` and the confirmed target from bare `/iloop` use [Issue intake](references/issue-intake.md): verify the report before normalizing labels, then resume the evidence-based RIPER stage. Unknown origins and unlabeled candidates remain visible. Existing valid progress, retry and claim history are preserved. `issue get N --strict` refuses to hide body/comment command failures; semantic investigation remains the Agent responsibility.

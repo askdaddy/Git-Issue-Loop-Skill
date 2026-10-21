@@ -2,6 +2,8 @@
 
 [简体中文](README_CN.md)
 
+Current stable release: [v0.6.10](https://github.com/askdaddy/Git-Issue-Loop-Skill/releases/tag/v0.6.10). See [CHANGELOG.md](CHANGELOG.md) for release history.
+
 `iloop` is an Agent Skill for running an issue-driven RIPER engineering loop:
 **Goal registration → Research → Innovation → Plan → Execute → Review**. A plain
 goal works too: the Planner drafts, confirms, and files it as an issue before the
@@ -19,11 +21,13 @@ CLIs: `gh`, `glab`, and `tea`.
   environment diagnostics, or `help` (usage plus the locally installed version).
 - Auto-pick on a bare `/iloop`: scans open issues read-only, orders them
   `p0`→`p3` then by ascending number, skips blocked / retry-capped /
-  verified-but-open ones, and reports the candidate list with its reasoning and
+  verified-but-open / claimed ones, and reports the candidate list with its reasoning and
   skipped items. It waits for your confirmation before loading any role, and
   handles exactly one issue per invocation.
-- Stage-aware dispatch: a numbered issue loads the matching frame-0 role from
-  its RIPER status (and artifacts), instead of always starting at Research.
+- Stage-aware dispatch: after checking whether intake is needed, a numbered
+  issue resumes the role and stage supported by its RIPER status and artifacts.
+  External or unknown-origin reports first receive Planner-led investigation
+  and minimal label correction; valid existing progress is preserved.
 - On start, compare the installed Skill against the highest stable git tag and
   ask before upgrading; never switch installs unattended.
 - Goal bootstrap: hand `/iloop` a plain goal instead of an issue number, and
@@ -59,8 +63,58 @@ CLIs: `gh`, `glab`, and `tea`.
   once the work is clean and already merged upstream, and refuses rather than
   discards work otherwise; `guard <role> <N>` additionally verifies that the
   current branch really is `riper/<N>`.
-- 15 black-box invariant suites under `test/` that drive stub `gh` / `glab` /
-  `tea` binaries in throwaway repositories.
+- Runtime feedback for permission refusals, workspace violations, and missing
+  Issue evidence: correct the task, prepare a redacted offline draft, and submit
+  to maintainers only with explicit authorization.
+- QA delivery through a verified pull request, with separate authorization for
+  merging and publishing. Local-only delivery keeps the Issue open.
+- 19 shell invariant suites under `test/`, covering CLI behavior through stubs
+  and contract checks. The intake scenario walkthroughs are protocol reviews,
+  not independent Agent end-to-end tests.
+
+## Third-party Issue intake
+
+Both `/iloop <N>` and the confirmed target from bare `/iloop` check whether the
+Issue needs intake. External or unknown-origin Issues without valid intake
+records go to the Planner, who verifies the report before changing labels:
+
+1. Read the body, comments, provenance, and existing stage evidence. Investigate
+   reproduction and root cause for bugs, or the scenario and scope for requests.
+   Record facts, hypotheses, and unknowns; pause when information is insufficient.
+2. Record findings in the original Issue, then minimally correct priority and
+   stage labels within role permissions. Preserve unrelated labels, valid stage
+   progress, retry counts, and claim history; reread to verify the changes.
+3. Resume normal RIPER dispatch. Reuse valid intake findings and revisit only
+   material changes; intake does not replace the specification or frozen plan.
+
+`issue get <N> --strict` stops when a body or comment CLI call fails. It does
+not certify pagination completeness or semantic accuracy. See the
+[intake protocol](references/issue-intake.md) and [record template](templates/intake.md).
+
+## Runtime feedback
+
+Permission refusals, workspace guard failures, and missing stage evidence first
+trigger task correction. `scripts/feedback.sh draft` produces a limited-field,
+offline draft; it does not write files or submit a report. Before writing to the
+maintainer repository, the Agent must redact the content, check duplicates, and
+obtain authorization for that write.
+
+Positive results include successful interception, safe recovery, regression
+fixes, and corrected false positives. A published fix stays “awaiting observation”
+until later runtime evidence supports verification. Feedback does not replace
+product acceptance or automatically consume QA retries. See the
+[feedback protocol](references/feedback-loop.md).
+
+## Integration and releases
+
+QA PASS → `riper-verified` → push and verify PR delivery → record evidence →
+close the Issue and release its claim. Acceptance, PR delivery, upstream merge,
+and publication are separate milestones. Offline or local-only merges keep the
+Issue open. Workspace cleanup requires confirmed upstream integration.
+
+PR merging and stable publication require separate authorization. A complete
+stable publication includes both a new tag and a matching GitHub Release, after
+the full test suite passes. See the [integration contract](references/integration.md).
 
 ## Install the latest stable release
 
@@ -103,6 +157,16 @@ for backup and switch.
    confirmation first. You can also pass an issue number, hand it a plain goal,
    or ask the Agent to only plan or only review.
 
+Common invocations:
+
+| Invocation | Behavior |
+|---|---|
+| `/iloop` | Present candidates and wait for confirmation; handle one Issue. |
+| `/iloop #44` | Read the target, check intake, then resume the supported stage. |
+| `/iloop Build X` | Draft a goal Issue and create it after confirmation. |
+| `/iloop help` | Show usage and the installed version; stop without entering the loop. |
+| `Plan only; do not execute` | Stop after planning, within the requested scope. |
+
 For an initial label setup in a repository, run:
 
 ```bash
@@ -130,10 +194,11 @@ INSTALL.md               Agent-managed Git installation protocol
 skill-manifest.json      Machine-readable installation contract
 scripts/git-ops.sh       Platform routing, Issue operations, and safeguards
 scripts/check-update.sh  Compares the installed Skill against the highest stable tag
+scripts/feedback.sh      Generates offline, limited-field feedback drafts
 roles/                   Planner, Developer, and Reviewer role instructions
-templates/               Spec, design, plan, and verification-report templates
-references/              CLI setup guidance and the minimum-code ladder
-test/                    Black-box invariant suites driving stub gh / glab / tea
+templates/               Intake, spec, design, plan, and verification-report templates
+references/              CLI setup, intake, feedback, integration, minimum-code ladder
+test/                    Shell invariant suites and intake protocol walkthroughs
 CHANGELOG.md             Stable-release change history
 docs/issues/<N>/         Degraded-fallback stage documents, written only when the
                          remote Issue platform is unavailable
@@ -142,7 +207,7 @@ docs/issues/<N>/         Degraded-fallback stage documents, written only when th
 ## Stable releases
 
 `main` is the development branch. Each stable release must use a new immutable
-`vX.Y.Z` tag and should have a matching GitHub Release containing its change
+`vX.Y.Z` tag and a matching GitHub Release containing its change
 notes. Pre-release tags use a SemVer suffix such as `-beta.1` and are skipped by
 the default installer. Changes to the install protocol (`INSTALL.md` or
 `skill-manifest.json` `installation`) must ship in a new stable `vX.Y.Z` tag.
@@ -150,11 +215,3 @@ the default installer. Changes to the install protocol (`INSTALL.md` or
 For the normative workflow rules, see [SKILL.md](SKILL.md). For the Chinese
 version of this introduction, see [README_CN.md](README_CN.md). Stable release
 history is recorded in [CHANGELOG.md](CHANGELOG.md).
-
-## Integration / 集成交付
-
-QA PASS → riper-verified → push + PR delivery and evidence → close. No automatic PR merge. Offline/local-only merge keeps the Issue open. Cleanup requires confirmed upstream integration; a stable publication needs both tag and GitHub Release. See [集成与发布契约](references/integration.md).
-
-## Third-party Issue intake / 第三方接入
-
-Both `/iloop <N>` and the confirmed target from bare `/iloop` use [Issue intake](references/issue-intake.md): verify the report before normalizing labels, then resume the evidence-based RIPER stage. Unknown origins and unlabeled candidates remain visible. Existing valid progress, retry and claim history are preserved. `issue get N --strict` refuses to hide body/comment command failures; semantic investigation remains the Agent responsibility.
