@@ -4,6 +4,31 @@ All notable changes to stable `iloop` releases are recorded here. Releases use
 immutable `vX.Y.Z` tags; installation follows the highest stable tag rather
 than `main`.
 
+## [0.6.10] - 2026-10-21
+
+### Added
+
+- Third-party Issue intake for both explicit Issue IDs and the confirmed target
+  from a bare invocation. The planner verifies the report before normalizing
+  labels, records facts and unknowns, and resumes the evidence-based stage. (#44)
+- An intake record template and protocol for source evidence, reproduction or
+  requirement investigation, label-change auditing, review of changed inputs,
+  and reuse of still-valid findings. Existing valid progress, unrelated labels,
+  retry counts and claim history are preserved. (#44)
+- `issue get <N> --strict`: body or comment command failures stop the read with
+  an explicit error. Legacy reads retain best-effort comment compatibility.
+  Strict mode does not certify pagination completeness or semantic accuracy.
+- Three-platform strict-read tests and documented intake scenario walkthroughs.
+  Protocol walkthroughs are distinguished from independent Agent E2E tests.
+
+### Changed
+
+- Stage dispatch checks whether external or unknown-origin Issues need intake;
+  bare-invocation candidate discovery stays read-only until user confirmation.
+  Research reuses verified intake evidence rather than repeating investigation.
+- The GitLab comment-read regression check now verifies the observable CLI call
+  instead of depending on a literal internal source expression. (#44)
+
 ## [0.6.9] - 2026-10-21
 
 ### Added
