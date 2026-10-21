@@ -526,6 +526,7 @@ check_permission() {
   # 未指定角色：警告后放行（人工直接调用场景）
   if [[ -z "${ROLE}" ]]; then
     log_info "未指定 --role，跳过权限硬校验（Agent 调用时建议携带 --role）。"
+    printf '%s\n' '[iloop-feedback] rule=ROLE-001 scope=unattributed (not a confirmed violation)' >&2
     return 0
   fi
 
@@ -540,12 +541,14 @@ check_permission() {
   case "${action}" in
     close|reopen)
       if [[ "${ROLE}" == "developer" ]]; then
+        printf '%s\n' '[iloop-feedback] rule=ROLE-001 outcome=intercepted' >&2
         log_error "权限拒绝：Developer 禁止 ${action} Issue（执行者无权自我判定完成）。"
         exit 1
       fi
       ;;
     priority)
       if [[ "${ROLE}" != "planner" ]]; then
+        printf '%s\n' '[iloop-feedback] rule=ROLE-001 outcome=intercepted' >&2
         log_error "权限拒绝：优先级仅 PM（planner）可在研究阶段判定设置。"
         exit 1
       fi
@@ -560,6 +563,7 @@ check_permission() {
         exit 1
       fi
       if ! status_allowed "${ROLE}" "${value}"; then
+        printf '%s\n' '[iloop-feedback] rule=ROLE-001 outcome=intercepted' >&2
         log_error "权限拒绝：角色 ${ROLE} 无权将状态切换为 '${value}'。"
         exit 1
       fi
@@ -582,6 +586,7 @@ check_permission() {
     retry-incr)
       # 重试计数仅由 QA 在审查 FAIL 退回时登记，PM / 开发不得自增（防止执行者刷计数）
       if [[ "${ROLE}" != "reviewer" ]]; then
+        printf '%s\n' '[iloop-feedback] rule=ROLE-001 outcome=intercepted' >&2
         log_error "权限拒绝：重试计数由 QA（reviewer）在审查 FAIL 时登记，${ROLE} 无权 incr。"
         exit 1
       fi
@@ -1583,6 +1588,7 @@ cmd_guard() {
     fi
     if [[ -n "${owner}" ]]; then
       if [[ "${owner}" != "${num}" ]]; then
+        printf '%s\n' '[iloop-feedback] rule=WORKSPACE-001 outcome=suspected' >&2
         log_error "guard：当前分支 ${cur} 属 Issue #${owner}，与给定的 Issue #${num} 不一致。"
         log_error "请切到 Issue #${num} 的工作区，或用正确编号：./scripts/git-ops.sh guard ${role} ${owner}"
         exit 1
@@ -1630,6 +1636,7 @@ EOF_STATUS
     return 0
   fi
 
+  printf '%s\n' '[iloop-feedback] rule=WORKSPACE-001 outcome=suspected' >&2
   log_error "guard(${role}) 失败：${violated}/${total} 个变更越界（T0 事故）。越界路径："
   printf '%s' "${violations}" >&2
   log_error "角色 ${role} 的可写区域："

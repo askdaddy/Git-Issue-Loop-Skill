@@ -74,6 +74,10 @@
 
 `plan.md` 全部步骤 `[x]`、代码已提交、状态已切到 `riper-review` 后，交棒给 QA。
 
+## 运行时规范反馈
+
+阶段交接检查标签、阶段证据与未完成验收；发现偏差先按原权限止损，再遵循 `references/feedback-loop.md`。反馈草稿不等于已提交，疑似不归责，不将普通规范补齐计入产品 retry；上游写入须有授权。
+
 ## 本地降级
 
 仅在用户明确独立目标工作区与分支时执行 `integration local`，遵循 `references/integration.md`；仅本地合并仍保持 Issue open。冲突停止保留现场并按权限 blocked，不解冲、不自动回滚。push/PR/Release 交付由 QA 负责。

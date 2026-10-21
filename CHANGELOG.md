@@ -4,6 +4,31 @@ All notable changes to stable `iloop` releases are recorded here. Releases use
 immutable `vX.Y.Z` tags; installation follows the highest stable tag rather
 than `main`.
 
+## [0.6.9] - 2026-10-21
+
+### Added
+
+- Runtime feedback protocol for evidence-based attribution, task correction,
+  redacted maintainer drafts, duplicate review, explicit submission authorization,
+  and links from fixes to regression checks, releases and later observations.
+  Suspected violations, confirmed violations, successful interception and false
+  positive corrections are recorded separately. (#40)
+- Offline allowlist-only feedback drafts for permission, workspace and Issue
+  evidence problems. Draft generation does not submit reports or persist logs;
+  unknown context stays unknown. (#40)
+- Stable diagnostic rule codes on permission and workspace refusals, preserving
+  existing decisions and exit codes; missing-role compatibility is marked as
+  unattributed rather than a confirmed violation. (#40)
+- Black-box feedback tests covering twelve draft combinations, secret-safe input
+  rejection, foreign working directories, absent Git metadata and refusal safety.
+
+### Changed
+
+- Stage handoffs now link to the feedback protocol while preserving the PR
+  delivery and release responsibilities introduced in v0.6.8. Feedback does not
+  consume ordinary product QA retries or claim production improvement without
+  an adequate observation window. (#40)
+
 ## [0.6.8] - 2026-10-20
 
 ### Added
