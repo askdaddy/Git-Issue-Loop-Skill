@@ -21,7 +21,9 @@
       "references/feedback-loop.md",
       "scripts/feedback.sh",
       "scripts/integration.sh",
-      "references/integration.md"
+      "references/integration.md",
+      "references/issue-intake.md",
+      "templates/intake.md"
     ]
   },
   "distribution": {
