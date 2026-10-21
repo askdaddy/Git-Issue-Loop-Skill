@@ -142,10 +142,13 @@ echo "=== step 1e: structural evidence — broken removal pattern absent ==="
 # the disproven removal-by-text-parse. So the brittle "exactly 1 occurrence"
 # count is dropped; the removal contract is guarded by the --unlabel / no
 # --remove-label / no uppercase-Labels:-parse assertions below.
-if grep -q 'glab issue view "${num}" --comments' "$GITOPS"; then
-  pass "cmd_issue_get still uses 'glab issue view --comments'"
+# #44 shares the reader invocation across platforms. Assert observable calls,
+# not the spelling of an internal function.
+probe issue get 7 --strict
+if [[ "$RC" -eq 0 ]] && grep -Fx 'issue view 7 --comments' "$CALLS" >/dev/null; then
+  pass "cmd_issue_get still invokes glab issue view --comments"
 else
-  fail "cmd_issue_get lost its 'glab issue view --comments' call"
+  fail "cmd_issue_get lost its glab comment read"
 fi
 if grep -qE 'glab issue update.*--remove-label' "$GITOPS"; then
   fail "git-ops.sh still issues 'glab issue update ... --remove-label'"

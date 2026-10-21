@@ -48,7 +48,7 @@ description: >-
    - QA 的唯一可写区域：`test/`（黑盒测试脚本），禁止改动被测业务代码。
    - 开发是唯一有权改动业务代码的角色，且**仅限 `plan.md` 覆盖范围**。
 2. **PM 产出的文档主路径写回 Issue**：spec / design / plan 全文以 Issue 评论形式写入；远程可用时**禁止额外落盘本地副本（不做双写冗余）**。
-3. **降级 fallback**：仅当远程 Issue 不可用（CLI 缺失 / 未授权 / 平台不支持 / API 调用失败 / 单条内容超出平台限制）时，才降级写入本地 `docs/issues/<N>/`（spec.md / design.md / plan.md / verify-report.md，基于 `templates/` 填充；用户显性指定其他路径时以用户为准），并在 Issue 恢复可用后于评论中引用该文件路径。
+3. **降级 fallback**：仅当远程 Issue 不可用（CLI 缺失 / 未授权 / 平台不支持 / API 调用失败 / 单条内容超出平台限制）时，才降级写入本地 `docs/issues/<N>/`（intake.md / spec.md / design.md / plan.md / verify-report.md，基于 `templates/` 填充；用户显性指定其他路径时以用户为准），并在 Issue 恢复可用后于评论中引用该文件路径。
 4. **QA 偏向黑盒测试**：优先从外部可观测行为验证（CLI / API / 端到端），不深入实现细节做白盒断言。
    如需编写测试脚本，**默认生成到项目的 `test/` 目录**，除非用户显性指定其他路径。
 5. **每个 Issue 必须有优先级**：由 PM 在 [G]/[R] 阶段按艾森豪威尔矩阵判定并设置 `p0`~`p3`；
@@ -74,12 +74,13 @@ description: >-
 
 ## 1. 多角色驱动机制（Persona Loading）
 
-**先完成 §3.0.1 启动分发，再按分发结果读取对应的一份角色文件。** 禁止为了「看看该不该调研」而预加载 PM。Skill 更新检查、doctor 与 `labels init` 不需要角色。
+**先完成 §3.0.1 启动分发（含第三方接入路由判断），再按分发结果读取对应的一份角色文件。** 禁止为了「看看该不该调研」而预加载 PM。Skill 更新检查、doctor 与 `labels init` 不需要角色。
 
 **进入分发指定的 RIPER 阶段之前，必须先完成该阶段的角色切换：**
 
 | 阶段 | 角色文件 | 角色 | 可写区域 |
 |------|----------|------|----------|
+| [T] 第三方接入（前置，非新状态） | `roles/planner.md` | PM | Issue 评论；仅降级 docs/ |
 | [G] 目标登记 | `roles/planner.md` | PM | Issue（创建 + 评论） |
 | [R] 研究 | `roles/planner.md` | PM | `docs/` + Issue |
 | [I] 创新 | `roles/planner.md` | PM（保持） | `docs/` + Issue |
@@ -190,7 +191,7 @@ description: >-
 
 ### 3.0.1 启动分发（Dispatch，无角色）
 
-doctor / `labels init` 通过后、加载任何角色之前执行。本层是协议查表，不是第四个 Persona：不读业务代码、不写 spec、不为了「看看该不该调研」而预加载 PM。
+doctor / `labels init` 通过后、加载任何角色之前执行。本层是协议查表，不是第四个 Persona：路由判断不读业务代码、不写 spec、不为了「看看该不该调研」而预加载 PM。判定需要第三方接入时，先完成接入路由分发，再进入 PM 前置查证，完成后返回普通分发。
 
 **状态先后（用于「更早」比较）**：
 
@@ -215,7 +216,7 @@ doctor / `labels init` 通过后、加载任何角色之前执行。本层是协
 **自动挑选**：只读、无角色、不写回 Issue。用户显性指定编号 / 目标 / 阶段意图时不触发本路径。
 
 1. **取候选四元组**（仅经 `git-ops.sh` 只读子命令；**禁止**为此提前加载任何 `roles/*.md`，禁止写状态/写标签/写评论）：`issue list --state open` 给出编号、优先级、RIPER 状态；retry 值逐个调 `issue retry <N> get`、认领状态逐个调 `issue claim <N> get`（列表**不含** retry / 认领列，二者单独读；`riper-claimed` 已被排除出状态列，不会污染 RIPER 状态）。若列表无标签列（glab/tea 降级，优先级/状态显示 `(无)`），改逐条 `issue get <N>` 读真实标签，并在报告中**标注该降级依据**，禁止按 `(无)` 占位静默误选。<!-- lazy-ladder: 逐条 retry get / claim get，open 量大时改 issue list 输出补 retry / 认领列 -->
-2. **排序**：p0 → p1 → p2 → p3 → 无优先级；同键按编号升序（更老的先收尾）。该顺序由本步负责，不依赖 `issue list` 的打印顺序。
+2. **排序**：p0 → p1 → p2 → p3 → 无优先级；同键按编号升序（更老的先收尾）。无标签/未分类/来源 unknown 的候选必须展示，标注需接入；此时不分析业务代码、不修标签。该顺序由本步负责，不依赖 `issue list` 的打印顺序。
 3. **跳过规则**：`riper-blocked`（等人工介入）、`riper-retry-3`（重试超限）、`riper-verified` 但未关闭（异常态，仅提示人工关闭/重开，不改状态）、`riper-claimed`（已被其他会话认领，`issue claim <N> get` 输出 `claimed`），四者均不参选并须写明原因。陈旧认领只报告、不自动抢占（抢占属影响他人工作的动作，交回用户）。
 4. **呈报并等确认**：输出候选清单，每条含 `编号 / 优先级 / RIPER 状态 / retry 值 / 认领状态 / 是否跳过及原因`，末行给出选中项与一句话理由；**停在此处等用户确认或改选**，不得选完直接开工。改选任一编号等同显式 `/iloop <编号>`，重新进第 1 层分发。
 5. **终止分支**：无 open Issue → 报告空态并指向 `[G]` 目标登记，**禁止**自动建 Issue、不加载角色；全部候选被跳过 → 报告各自卡点原因后停止，不改任何状态（对齐 `riper-blocked 不参与前进`）。
@@ -225,7 +226,7 @@ doctor / `labels init` 通过后、加载任何角色之前执行。本层是协
 
 #### 第 1 层：阶段分发（Issue 证据）
 
-对编号 N 执行 `./scripts/git-ops.sh issue get <N>`（此时仍无角色；`get` 不限角色）。从标签读取唯一 `riper-*`、`p0`–`p3`、`riper-retry-*`。用下列标记扫描评论与降级文件 `docs/issues/<N>/`（命中任一即视为产物存在）：
+对编号 N 执行 `./scripts/git-ops.sh issue get <N> --strict`（此时仍无角色；`get` 不限角色）。正文或评论读取失败即暂停，禁止将部分输出当完整依据。从标签读取唯一 `riper-*`、`p0`–`p3`、`riper-retry-*`。用下列标记扫描评论与降级文件 `docs/issues/<N>/`（命中任一即视为产物存在）：
 
 | 产物 | 评论或文件标记 |
 |------|----------------|
@@ -235,6 +236,13 @@ doctor / `labels init` 通过后、加载任何角色之前执行。本层是协
 | verify-report | `Verify Report` / `verify-report`，或同时含 `阶段: [R] Review` 与逐项 PASS/FAIL |
 
 自定义评论标题须保留上表标记，否则产物检测会漏。
+
+**第三方接入路由（先于普通阶段切入）**：按 [接入协议](references/issue-intake.md) 先保护 closed/verified/blocked、retry 上限及他人认领，再核对来源和既有接入记录。已核验目标直入 [G] 且需求/产物一致可原阶段续跑；外部或来源 unknown、未有效接入或内容实质变化者，分发为 PM 的 `[T]` 前置入口，**此时完成接入路由分发后才加载 planner.md**，不得在候选初筛时预加载角色。不要只看作者、标签或标题认定来自 Skill。
+
+PM 按 templates/intake.md 先查证、评论待确认问题/标签建议，再写前重读、按权限最小修正 labels、写后回读。接入自身不改业务代码；未查清或读取/修标签失败则暂停；不能用接入重置合法阶段、retry、claim。PM 不得设置超出其权限的状态，有权角色交接完成前不得开始业务工作。已完成且无实质变化时复用，不重复调查。
+
+接入完成回到本层按下面证据规则分发；Research 引用接入证据只补缺口。`[T]` 没有新状态标签，不替代研究/冻结计划；详情、字段、并发及 #37 能力边界均见接入协议。裸入口仅对用户已确认目标执行本段，显式编号共用本段。
+
 
 **证据阶段**：无 spec → 早于研究；有 spec 无 design → 研究完成；有 design 无 plan → 创新完成；有冻结 plan → 计划完成；有 verify-report 或 retry>0 且状态为 `riper-plan` → FAIL 回退修计划（不要当第一版 plan 来写）。
 
@@ -311,7 +319,7 @@ Issue(编号 N)
 2. `./scripts/git-ops.sh --role planner issue get <N>` 获取 Issue 详情（标题、正文、评论、标签）。
 3. **校验并设置优先级**（艾森豪威尔矩阵；[G] 目标登记已设置过则校验沿用，不重复设置）：`./scripts/git-ops.sh --role planner issue priority <N> <p0|p1|p2|p3>`。
 4. **对齐状态**：分发已判定入口为研究，执行 `./scripts/git-ops.sh --role planner issue status <N> riper-research`。若标签曾超前于产物，这是把状态拉回证据阶段（C6 允许的产物回退），不是把合法的执行/审查 Issue 打回研究。
-5. 阅读正文与全部评论，**只读**拉取相关代码上下文（涉及文件、模块、依赖）。
+5. 如有有效接入记录，先引用其已核验证据与问题，仅补缺口，不重复调查。阅读正文与全部评论，**只读**拉取相关代码上下文（涉及文件、模块、依赖）。
 6. 按 `templates/spec.md` 提炼规范：原始需求、上下文代码、核心约束、澄清假设。
    - **已有 spec**（评论或降级文件命中 §3.0.1 产物标记）：只补缺口或澄清，**禁止从零重开调研**；spec 已完整则进入 §3.0.1 让下一阶段接手（通常为 `[I]`）。
    - **尚无 spec**：全文以评论写入 Issue → `./scripts/git-ops.sh --role planner issue comment <N> "<spec 全文>"`，不落盘本地；

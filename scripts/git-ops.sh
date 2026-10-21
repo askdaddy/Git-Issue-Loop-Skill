@@ -90,7 +90,7 @@ Usage:
 Commands:
   git-ops.sh issue list [--state open|closed|all] [--status <riper-*>] [--priority <p0|p1|p2|p3>]
                                                   列出 Issue（按优先级 p0→p3 排序；glab/tea 无标签列时降级）
-  git-ops.sh issue get <num>                       获取 Issue 详情（含正文与评论）
+  git-ops.sh issue get <num> [--strict]            获取正文与评论；strict 时任一读取失败即停止
   git-ops.sh issue comment <num> "<content>"       给 Issue 添加评论
   git-ops.sh issue create "<title>" "<body>"       创建新 Issue
   git-ops.sh issue close <num>                     关闭 Issue
@@ -754,30 +754,32 @@ EOF_ROWS
   }
 }
 
-# 获取 Issue 详情：gh/glab/tea 均支持 `issue view <num> --comments`
+# 严格读取用于接入和标签审计；旧入口保留评论 best-effort 兼容。
 cmd_issue_get() {
-  local num="$1"
-  local __plat
-  __plat="$(detect_platform)" || exit 1
+  local num="$1" strict="${2:-}" __plat
+  local -a reader
+  __plat="$(detect_platform)" || return 1
+  require_cli "${__plat}"
   case "${__plat}" in
-    gh)
-      require_cli gh
-      gh issue view "${num}"
-      gh issue view "${num}" --comments 2>/dev/null || true
-      ;;
-    glab)
-      require_cli glab
-      glab issue view "${num}"
-      glab issue view "${num}" --comments 2>/dev/null || true
-      ;;
-    tea)
-      require_cli tea
-      tea_cmd issues "${num}"
-      tea_cmd issues "${num}" --comments 2>/dev/null || true
-      ;;
+    gh) reader=(gh issue view "${num}") ;;
+    glab) reader=(glab issue view "${num}") ;;
+    tea) reader=(tea_cmd issues "${num}") ;;
   esac
+  if ! "${reader[@]}"; then
+    log_error "Issue 正文读取失败，停止；不得依据部分输出修正标签。"
+    return 1
+  fi
+  if [[ "${strict}" == "--strict" ]]; then
+    if ! "${reader[@]}" --comments; then
+      log_error "Issue 评论读取失败，严格模式停止；不得将部分输出当完整输入。"
+      return 1
+    fi
+  else
+    "${reader[@]}" --comments 2>/dev/null || true
+  fi
 }
 
+# ---------------------------------------------------------------------------
 # 添加评论：gh/glab 支持 `issue comment <num> -b/--body`；tea 使用 issues 命令组
 cmd_issue_comment() {
   local num="$1" content="$2"
@@ -2201,8 +2203,8 @@ main() {
           cmd_issue_list "$@"
           ;;
         get)
-          [[ $# -eq 1 ]] || usage
-          cmd_issue_get "$1"
+          [[ $# -eq 1 || ( $# -eq 2 && "$2" == "--strict" ) ]] || usage
+          cmd_issue_get "$@"
           ;;
         comment)
           [[ $# -eq 2 ]] || usage

@@ -154,3 +154,7 @@ history is recorded in [CHANGELOG.md](CHANGELOG.md).
 ## Integration / 集成交付
 
 QA PASS → riper-verified → push + PR delivery and evidence → close. No automatic PR merge. Offline/local-only merge keeps the Issue open. Cleanup requires confirmed upstream integration; a stable publication needs both tag and GitHub Release. See [集成与发布契约](references/integration.md).
+
+## Third-party Issue intake / 第三方接入
+
+Both `/iloop <N>` and the confirmed target from bare `/iloop` use [Issue intake](references/issue-intake.md): verify the report before normalizing labels, then resume the evidence-based RIPER stage. Unknown origins and unlabeled candidates remain visible. Existing valid progress, retry and claim history are preserved. `issue get N --strict` refuses to hide body/comment command failures; semantic investigation remains the Agent responsibility.
