@@ -4,6 +4,28 @@ All notable changes to stable `iloop` releases are recorded here. Releases use
 immutable `vX.Y.Z` tags; installation follows the highest stable tag rather
 than `main`.
 
+## [0.6.8] - 2026-10-20
+
+### Added
+
+- Explicit-role integration primitives for branch pushes, GitHub/GitLab/Gitea
+  pull requests, isolated local fallback merges, and GitHub Release metadata.
+  Release creation checks the published lightweight tag, expected commit,
+  default branch and version-specific CHANGELOG notes. (#25)
+- Black-box integration tests for role denial, platform routing, local merge
+  conflicts, release preconditions and cleanup failure safety. (#25)
+
+### Changed
+
+- QA closes an accepted Issue only after a pull request has been delivered and
+  its branch/commit evidence recorded, or upstream integration is confirmed.
+  Offline or local-only merges keep the Issue open. Pull requests are not
+  merged automatically; publication requires separate authorization. (#25)
+- Workspace cleanup refreshes the upstream reference before checking ancestry.
+  Unmerged, uncertain or squash/rebase-only ancestry is retained for review.
+- GitHub pull request inspection returns base/head branches and the head SHA
+  so delivery can be checked against the accepted commit. (#25)
+
 ## [0.6.7] - 2026-10-20
 
 ### Added

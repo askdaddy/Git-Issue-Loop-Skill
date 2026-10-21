@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "skill": {
     "name": "iloop",
-    "version": "0.6.7",
+    "version": "0.6.8",
     "entry": "SKILL.md",
     "requiredPaths": [
       "SKILL.md",
@@ -19,7 +19,9 @@
       "references/lazy-ladder.md",
       "scripts/check-update.sh",
       "references/feedback-loop.md",
-      "scripts/feedback.sh"
+      "scripts/feedback.sh",
+      "scripts/integration.sh",
+      "references/integration.md"
     ]
   },
   "distribution": {
