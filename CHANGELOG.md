@@ -4,6 +4,33 @@ All notable changes to stable `iloop` releases are recorded here. Releases use
 immutable `vX.Y.Z` tags; installation follows the highest stable tag rather
 than `main`.
 
+## [0.6.11] - 2026-10-22
+
+### Changed
+
+- Aligned the main workflow, all three role prompts, and handoff templates.
+  PASS, confirmed FAIL, and unable-to-verify results now have distinct exits;
+  missing evidence or environment alone does not consume QA retries. (#48)
+- Unified PR delivery before Issue closure, Planner-owned frozen-plan revisions,
+  intake handoff gates, and evidence validity checks. Completed valid artifacts
+  can advance without repeatedly restarting the same stage. (#48)
+- Restructured role prompts around entry, inputs, permitted actions, outputs,
+  handoff and stopping conditions, replacing emotional personas with explicit
+  evidence requirements. Script enforcement and Agent protocol guarantees are
+  described separately. Runtime CLI permissions and labels are unchanged. (#48)
+- Plan comments reference the current spec and design instead of duplicating
+  all three documents; revised acceptance templates capture baseline versions,
+  tested commits, unknown results and delivery evidence. (#48, #27)
+- Updated project guides in both languages for intake, feedback, integration,
+  invocation examples and the 19 shell suites. (#47)
+
+### Validation
+
+- Added 18 prompt-alignment protocol walkthroughs and maintained dispatch
+  assertions against the normative contract rather than obsolete prose.
+  Walkthroughs are same-session protocol reviews, not independent Agent E2E
+  tests or evidence of real-world compliance rates. (#48)
+
 ## [0.6.10] - 2026-10-21
 
 ### Added
