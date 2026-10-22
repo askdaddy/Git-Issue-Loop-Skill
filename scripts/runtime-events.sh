@@ -180,7 +180,9 @@ _iloop_evt_exit() {
     *)       duration_json="${duration}" ;;
   esac
 
-  # 子 shell 隔离写入：fd3 关闭 / 管道断开 / 写入失败都只影响该子 shell。
+  # 子 shell 隔离写入：fd3 关闭 / 只读 / 管道断开 / 写入失败都只影响该子 shell。
+  # 外层 stdout 也指向 /dev/null：某些 shell 在 `>&3` 失败时会把缓冲内容落回原 stdout，
+  # 这里确保观测失败绝不污染调用者的标准输出。
   (
     printf '{"schema":"iloop.runtime.v1","run_id":"%s","event_id":"%s","time":"%s","skill_tag":"%s","skill_sha":"%s","issue":"%s","role":"%s","action":"%s","result":"%s","rule":"%s","exit_code":%s,"duration_ms":%s,"checkpoint":"%s","side_effects":"%s"}\n' \
       "${_ILOOP_EVT_RUN_ID}" "${eid}" "${ts}" \
@@ -189,7 +191,7 @@ _iloop_evt_exit() {
       "${_ILOOP_EVT_RESULT}" "${_ILOOP_EVT_RULE}" \
       "${exit_json}" "${duration_json}" \
       "${_ILOOP_EVT_CHECKPOINT}" "${_ILOOP_EVT_SIDE_EFFECTS}" >&3
-  ) 2>/dev/null || true
+  ) >/dev/null 2>/dev/null || true
 
   return 0
 }

@@ -75,7 +75,7 @@ CLIs: `gh`, `glab`, and `tea`.
   [runtime output contract](references/runtime-output.md).
 - QA delivery through a verified pull request, with separate authorization for
   merging and publishing. Local-only delivery keeps the Issue open.
-- 19 shell invariant suites under `test/`, covering CLI behavior through stubs
+- 20 shell invariant suites under `test/`, covering CLI behavior through stubs
   and contract checks. The intake scenario walkthroughs are protocol reviews,
   not independent Agent end-to-end tests.
 
