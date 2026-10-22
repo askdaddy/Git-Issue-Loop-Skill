@@ -14,6 +14,7 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
 ## 提供的能力
 
 - `/iloop` 入口，可执行完整 RIPER 闭环、仅计划、验收、环境自检，或 `help`（输出用法速览 + 本地已安装版本）。
+- 会话粘性 buffer：一次有效调用后，提问、等待确认或报告阻塞都只是**挂起**而非退出；用户回复即回到同一 Issue、阶段、角色与执行范围继续。只有 `/iloop exit` / `退出 iloop` 等显性指令或新会话才离开；退出默认保留认领，不自动改 Issue 状态。
 - 裸 `/iloop` 自动挑选：只读扫描 open Issue，按 `p0`→`p3`、同优先级编号升序排序，跳过阻塞 / 重试超限 / 已验收未关闭 / 已认领者，呈报候选清单、选择理由与跳过项；**等用户确认后**才加载角色，且每次调用只处理 1 个 Issue。
 - 启动分发：编号入口先判断接入需要，再按 RIPER 状态与阶段产物续跑。外部或来源未知的报告先由 Planner 查证、最小修正标签，保留合法进度。
 - 启动时对照官方仓库最高稳定 tag 检查 Skill 是否有更新；有则询问是否升级，不自动切换。
@@ -28,7 +29,7 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
 - 运行时反馈：角色操作被拒绝、工作区越界或 Issue 阶段证据缺失时，先纠偏任务，再生成脱敏离线草稿；向维护上游提交须明确授权。
 - 可选的结构化运行输出：`issue priority`、`issue status`、`issue comment`、`guard` 可在调用者预先打开的 fd3 上输出一条 NDJSON 事件（`ILOOP_EVENTS_FD=3`）；并提供区分「脚本观察事实 / Agent 声明 / 未验证」的阶段摘要模板（`templates/run-summary.md`）。默认关闭：不写本地事件日志、不联网，不改变 stdout、stderr 与退出码。契约见[运行时输出](references/runtime-output.md)。
 - QA 通过核验后的 PR 交付，合并与发布另需授权；仅本地交付时 Issue 保持 open。
-- `test/` 下 20 组 shell 不变量测试，覆盖 stub CLI 行为与契约检查；第三方接入场景走查属于协议审阅，不等同于独立 Agent 端到端测试。
+- `test/` 下 21 组 shell 不变量测试，覆盖 stub CLI 行为与契约检查；第三方接入场景走查属于协议审阅，不等同于独立 Agent 端到端测试。
 
 ## 第三方 Issue 接入
 
@@ -83,8 +84,11 @@ QA PASS → `riper-verified` → 推送并核验 PR 交付 → 写回证据 → 
 | `/iloop` | 呈报候选并等待确认，每次处理一个 Issue。 |
 | `/iloop #44` | 读取目标、判断接入需要，再按证据续跑当前阶段。 |
 | `/iloop 我要实现 X` | 先起草目标 Issue，经确认后创建。 |
-| `/iloop help` | 仅显示用法与本地版本，不进入闭环。 |
+| `/iloop help` | 仅显示用法与本地版本，不进入闭环，也不激活 buffer。 |
+| `/iloop exit` | 显性退出 buffer，输出交接摘要；不关 Issue、不自动释放认领。 |
 | `排 plan，不要执行` | 在请求范围内推进，计划完成后停止。 |
+
+进入 buffer 后，中途回答确认、补充需求或提问都不会退出；回复会从挂起点继续。只有显性退出或新会话才离开。
 
 首次在一个仓库中使用时，可初始化标签体系：
 

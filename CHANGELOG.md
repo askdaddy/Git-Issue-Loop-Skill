@@ -4,6 +4,22 @@ All notable changes to stable `iloop` releases are recorded here. Releases use
 immutable `vX.Y.Z` tags; installation follows the highest stable tag rather
 than `main`.
 
+## [Unreleased]
+
+### Added
+
+- A session-sticky iloop buffer. After an effective invocation, clarifying
+  questions, confirmations, environment handoffs, and blocked reports suspend
+  the workflow instead of exiting it. The next user message resumes the same
+  Issue, stage, role, and scope; only an explicit `/iloop exit` (or equivalent)
+  or a new session leaves. Exit prints a handoff summary and keeps the claim;
+  remote Issue labels remain the cross-session source of truth.
+
+### Validation
+
+- Added a shell invariant suite covering buffer entry, suspension, resume,
+  explicit exit, help-without-activation, and non-terminal semantics.
+
 ## [0.6.11] - 2026-10-22
 
 ### Changed
