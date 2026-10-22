@@ -19,6 +19,11 @@ CLIs: `gh`, `glab`, and `tea`.
 
 - A `/iloop` entry point for a complete RIPER loop, planning-only work, review,
   environment diagnostics, or `help` (usage plus the locally installed version).
+- A session-sticky iloop buffer: after an effective invocation, clarifying
+  questions, confirmations, and blocked reports suspend rather than exit the
+  loop. Your reply resumes the same Issue, stage, role, and scope; only an
+  explicit `/iloop exit` (or equivalent, such as `退出 iloop`) or a new session
+  leaves. Exit keeps the claim and does not change Issue state by itself.
 - Auto-pick on a bare `/iloop`: scans open issues read-only, orders them
   `p0`→`p3` then by ascending number, skips blocked / retry-capped /
   verified-but-open / claimed ones, and reports the candidate list with its reasoning and
@@ -75,7 +80,7 @@ CLIs: `gh`, `glab`, and `tea`.
   [runtime output contract](references/runtime-output.md).
 - QA delivery through a verified pull request, with separate authorization for
   merging and publishing. Local-only delivery keeps the Issue open.
-- 20 shell invariant suites under `test/`, covering CLI behavior through stubs
+- 21 shell invariant suites under `test/`, covering CLI behavior through stubs
   and contract checks. The intake scenario walkthroughs are protocol reviews,
   not independent Agent end-to-end tests.
 
@@ -171,8 +176,13 @@ Common invocations:
 | `/iloop` | Present candidates and wait for confirmation; handle one Issue. |
 | `/iloop #44` | Read the target, check intake, then resume the supported stage. |
 | `/iloop Build X` | Draft a goal Issue and create it after confirmation. |
-| `/iloop help` | Show usage and the installed version; stop without entering the loop. |
+| `/iloop help` | Show usage and the installed version; stop without entering the loop or activating the buffer. |
+| `/iloop exit` | Leave the buffer explicitly and print a handoff summary; keep the Issue open and the claim held. |
 | `Plan only; do not execute` | Stop after planning, within the requested scope. |
+
+Once in the buffer, answering a confirmation, adding scope, or asking a side
+question does not exit; the reply resumes the suspended step. Only an explicit
+exit or a new session leaves.
 
 For an initial label setup in a repository, run:
 

@@ -30,6 +30,8 @@
 
 ## 交接与停止条件
 
+本节所有「停止 / 暂停 / 等待」都是 SKILL.md §会话 buffer 的**挂起**，不是退出 iloop：按挂起协议输出 `[iloop-buffer]` 状态头，用户回复后从同一 Issue、阶段与角色继续；只有用户显性退出才离开。
+
 统一按 SKILL.md §3.7 与 `references/integration.md` 决定出口：
 - 全部 PASS 且无确认越界：verified → 推送并核验 PR 交付 → 写回 URL/base/head/SHA 与报告 → 关闭并释放认领。未交付保持 open，不因 PASS 直接关闭；默认不自动合并。
 - 已确认 FAIL：每审查轮次只登记一次 retry，已为3则 blocked；否则退 plan 交 PM。计划/实现/环境是原因分类，不是直接写 execute 的权限。仅实现失败时 PM 可确认原计划有效后交开发，不必制造验收修订。
