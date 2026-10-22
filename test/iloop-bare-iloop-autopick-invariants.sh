@@ -40,7 +40,7 @@ has '容错：若用户在 `/iloop` 后直接带了编号或阶段意图' "expli
 
 echo "=== (A2) layer 0 routing ==="
 has '\| \*\*裸 `/iloop`（无任何参数与意图词）\*\* \| \*\*自动挑选\*\*子程序（见下）→ 呈报待确认 → 对选中编号进入第 1 层 \|' "layer 0 has the bare-entry route"
-has '六条显式路由\*\*均优先于\*\*自动挑选；裸 `/iloop` 是最末兜底路由' "explicit routes keep precedence over auto-pick"
+has '上表显式路由\*\*均优先于\*\*自动挑选；裸 `/iloop` 是最末兜底路由' "explicit routes keep precedence over auto-pick"
 has '\*\*自动挑选\*\*：只读、无角色、不写回 Issue' "auto-pick is read-only, role-free, writes nothing"
 has '禁止\*\*为此提前加载任何 `roles/\*\.md`，禁止写状态/写标签/写评论' "no role loading and no writes before dispatch (C1)"
 
