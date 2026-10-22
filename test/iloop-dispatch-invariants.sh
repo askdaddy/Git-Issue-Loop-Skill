@@ -106,7 +106,9 @@ assert_no_grep "${ROOT}/README_CN.md" '再从研究阶段进入闭环' "Chinese 
 
 echo "=== step 11 README ==="
 assert_grep "${ROOT}/README.md" 'dispatch|frame-0' "English README mentions dispatch"
-assert_grep "${ROOT}/README.md" 'instead of always starting at Research' "English README numbered entry is not always Research"
+# README prose can change; the normative dispatch table must retain direct E/QA routes.
+assert_grep "$SKILL" '\| `riper-execute`.*开发' "numbered execute dispatch goes directly to developer"
+assert_grep "$SKILL" '\| `riper-review`.*QA' "numbered review dispatch goes directly to QA"
 
 echo "=== out of scope: no loop-state ==="
 assert_no_grep "$SKILL" '\.loop-state' "SKILL.md must not introduce .loop-state"
