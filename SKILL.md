@@ -15,7 +15,7 @@ description: >-
 # iloop（git-issue-loop）：Issue 驱动的 RIPER 研发闭环
 
 本 Skill 将 Git Issue 的生命周期与 RIPER 工作流深度融合。
-输入是一个 Issue 编号，或一句目标描述（经 [G] 目标登记自动创建为 Issue）；输出是一个通过验收、状态为 `riper-verified` 且已关闭的研发闭环。
+输入是一个 Issue 编号，或一句目标描述（经 [G] 目标登记自动创建为 Issue）；目标是完成验收与 PR 交付后关闭 Issue；仅计划、无法验证、阻塞或未交付时按实际结果停止，不把关闭作为无条件承诺。
 
 **角色简称**：Planner = **PM**（产品/架构），Developer = **开发**，Reviewer = **QA**（质量）。
 
@@ -27,7 +27,7 @@ description: >-
 **裸 `/iloop`（无任何参数）进入时，自动挑选最该处理的 Issue**，三项信息取默认值、不再向用户追问：
 
 1. **目标 Issue**：由 §3.0.1 第 0 层的「自动挑选」子程序选出唯一一个候选（p0→p3、同优先级编号升序，跳过阻塞与重试超限）。
-2. **执行范围**：默认所选 Issue 的**完整闭环**（按其当前阶段 0 帧切入 → … → `riper-verified` 关闭，或 `riper-blocked` 停止）；**每次调用只处理 1 个**，推进下一个需再敲一次 `/iloop`。
+2. **执行范围**：默认所选 Issue 的**完整闭环**（按其当前阶段 0 帧切入 → 验收与PR交付后关闭，或在缺口/阻塞处停止）；**每次调用只处理 1 个**，推进下一个需再敲一次 `/iloop`。
 3. **落盘方式**：沿用默认——阶段文档主路径写回 Issue 评论，仅当远程 Issue 不可用时降级写入本地 `docs/issues/<N>/`；QA 测试脚本默认 `test/`。
 
 自动挑选**不直接开工**：Agent 必须先呈报「候选 + 选择理由 + 跳过项及原因」，经用户确认（或改选）后才加载角色进入该 Issue 的闭环（见 §3.0.1 第 0 层）。用户已给出编号、目标或阶段意图时，显式入口优先于自动挑选。
@@ -45,30 +45,30 @@ description: >-
 
 1. **PM 与 QA 不得改动任何业务代码**——只读代码。违反即 T0 事故。
    - PM 的唯一可写文件区域：`docs/`，且**仅用于降级落盘**（见铁律 3；远程可用时产出一律评论写回 Issue）。
-   - QA 的唯一可写区域：`test/`（黑盒测试脚本），禁止改动被测业务代码。
+   - QA 的可写区域：`test/` 与仅降级时的 `docs/issues/<N>/verify-report.md`，禁止改动被测业务代码。
    - 开发是唯一有权改动业务代码的角色，且**仅限 `plan.md` 覆盖范围**。
 2. **PM 产出的文档主路径写回 Issue**：spec / design / plan 全文以 Issue 评论形式写入；远程可用时**禁止额外落盘本地副本（不做双写冗余）**。
 3. **降级 fallback**：仅当远程 Issue 不可用（CLI 缺失 / 未授权 / 平台不支持 / API 调用失败 / 单条内容超出平台限制）时，才降级写入本地 `docs/issues/<N>/`（intake.md / spec.md / design.md / plan.md / verify-report.md，基于 `templates/` 填充；用户显性指定其他路径时以用户为准），并在 Issue 恢复可用后于评论中引用该文件路径。
 4. **QA 偏向黑盒测试**：优先从外部可观测行为验证（CLI / API / 端到端），不深入实现细节做白盒断言。
    如需编写测试脚本，**默认生成到项目的 `test/` 目录**，除非用户显性指定其他路径。
-5. **每个 Issue 必须有优先级**：由 PM 在 [G]/[R] 阶段按艾森豪威尔矩阵判定并设置 `p0`~`p3`；
+5. **每个 Issue 必须有优先级**：由 PM 在 [G]/[T]/[R] 阶段查证后按艾森豪威尔矩阵判定并设置 `p0`~`p3`；
    未设置优先级的 Issue 不得进入 [I] 创新阶段。任何角色新建 Issue 后，也必须立即由 PM 补设优先级。
 6. **优先级与状态标签必须用平台原生 label 能力表达，禁止写进 Issue 标题**；优先级、状态、重试计数三族标签各自**排他**（同时只能存在一个，详见 §1.2）。
-7. 上述权限由 `git-ops.sh --role <角色>` 在脚本层硬性强制，Agent 不得以任何方式绕过。
+7. 脚本强制检查其实现覆盖的角色动作、受管标签和路径边界；阶段证据、关闭理由、计划范围及授权由 Agent 按协议核验，不能宣称脚本认证了内容质量。Agent 不得绕过权限。
 8. **Issue 操作必须优先使用本地官方 CLI**（GitHub→`gh`，GitLab→`glab`，Gitea/Forgejo→`tea`），由 `git-ops.sh` 自动路由；**禁止**改用 REST API + 手写 token、网页点击或其他绕行方式。本地缺 CLI 或未授权时，**必须停下来把安装/授权指南交给用户**，不得代填凭据、不得跳过 Issue 写回步骤。
 9. **提交前必须执行 `./scripts/git-ops.sh guard <当前角色> <N>`，越界即 T0 事故**：脚本以 `git status --porcelain` 比对角色可写区域白名单（PM=`docs/`；开发=除 `test/` 与 `docs/` 外全部，但放行 `docs/issues/<N>/plan.md`；QA=`test/` 与 `docs/issues/<N>/verify-report.md`），命中越界路径即 `exit 1`，必须修正后再提交。`<N>` 为当前 Issue 编号：给出后脚本会额外校验当前分支是否为 `riper/<N>`，不一致即 `exit 1`（防止把改动提交到别的 Issue 的工作区）；分支非 `riper/*` 形态时只提示不失败。**能力边界（如实声明）**：`guard` 只能校验「区域级越界」（文件落在哪个目录），**无法**校验「是否超出 `plan.md` 范围」——后者仍依赖角色自律与 [R] 审查阶段的越界判定。此外 `guard` 取的是 cwd 全量变更，多会话共用主工作树时可能把别人的改动算到本角色头上，脚本会额外打印一段并行污染诊断并指向 `workspace start <N>`（诊断不改变判定与 exit code）。
 
 ## 0. 核心约定
 
 - **唯一事实来源**：Issue（正文 + 评论 + 标签）为主；本地 `docs/issues/<N>/` 仅为**降级 fallback，不是持久化副本**——远程可用时不得双写。
-- **降级落盘位置**：`docs/issues/<N>/`（spec.md / design.md / plan.md / verify-report.md），基于 `templates/` 填充，仅当远程 Issue 不可用时使用；用户显性指定时以用户为准。
+- **降级落盘位置**：`docs/issues/<N>/`（intake.md / spec.md / design.md / plan.md / verify-report.md），基于 `templates/` 填充，仅当远程 Issue 不可用时使用；用户显性指定时以用户为准。
 - **测试脚本位置**：QA 的黑盒测试脚本默认落 `test/`；用户显性指定时以用户为准。
-- **Git 操作**：一律通过 `scripts/git-ops.sh` 执行，禁止直接调用 `gh` / `glab` / `tea`。Agent 调用时**必须携带 `--role <当前角色>`**，脚本按 §1.1 权限矩阵与 §1.2 标签体系硬性校验。子命令清单：`issue list|get|comment|create|close|reopen|priority|status|retry|claim|label`、`labels init`、`guard <role> [N]`、`workspace status|start|finish`、`platform`、`doctor`。
+- **平台操作**：Issue / PR / Release 经 `scripts/git-ops.sh` 执行，禁止直接调用 `gh` / `glab` / `tea`。加载角色后的操作必须携带 `--role <当前角色>`；无角色入口仅可执行自检、标签初始化与分发所需只读命令，不为通过权限检查伪造角色。本地 Git 读写与经授权的 tag 操作按对应阶段执行。脚本按 §1.1 权限矩阵与 §1.2 标签体系硬性校验。子命令清单：`issue list|get|comment|create|close|reopen|priority|status|retry|claim|label`、`labels init`、`guard <role> [N]`、`workspace status|start|finish`、`platform`、`doctor`。
 - **工作区隔离（并行会话必须遵守）**：一 Issue 一 worktree 一分支。开工前先 `./scripts/git-ops.sh workspace start <N>`，脚本会在**仓库外** `../.iloop-worktrees/<repo>/<N>` 建 worktree 并挂 `riper/<N>` 分支。基分支恒为 `origin/<默认分支>`，**不基于本地分支**——本地分支可能带着别的会话尚未推送的提交。已经在 linked worktree 内时**不嵌套创建**，只把当前工作区规范化到 `riper/<N>`（detached HEAD 就地挂分支并保留原提交）。收尾用 `workspace finish <N>`（仅当工作区干净且已合并进 `origin/<默认分支>`，否则拒绝清理）；推送 / PR 属集成阶段，见 references/integration.md；默认不自动合并。
 - **认领互斥（并行会话必须遵守）**：`workspace start <N>` 成功（先过同机 `riper/<N>` 分支快失败这道硬闸）后，立即 `./scripts/git-ops.sh issue claim <N> claim` 写远端认领信号（`riper-claimed` 标签 + 审计评论），使其他会话的自动挑选跳过本 Issue；若 `claim` 报告"已被认领"则**不抢占**，停下交回用户。释放在闭环终态执行（见 §3.7）。认领是尽力而为信号、非硬锁（详见 §1.2(4)）。
 - **cwd 会被宿主重置**：`workspace start` 输出的是 worktree 的**绝对路径**，宿主可能在每次工具调用后把 cwd 重置回会话起点。故后续所有仓库内命令都必须以该绝对路径为 cwd（`cd <绝对路径> && …` 前缀，或使用工具自带的工作目录参数），**不得假设 cwd 会延续**；不确定时先跑 `./scripts/git-ops.sh workspace status` 确认自己在哪个工作树、哪条分支、归属哪个 Issue。
 - **平台路由**：脚本通过 `git remote -v` 自动检测并路由到对应 CLI，Agent 无需关心托管平台差异。
-- **前置自检**：进入循环前先跑 `./scripts/git-ops.sh doctor`（检查运行环境 + CLI 安装 + 授权状态）。不就绪时脚本会输出安装/授权指南并 `exit 1`，Agent 必须中止循环、把指南**原样呈现给用户**，待用户完成后重跑 `doctor` 再继续；完整指南见 `references/cli-setup.md`。
+- **前置自检**：先分类调用；help 终止、仅检查更新等独立请求按入口处理，其余进入循环前先跑 `./scripts/git-ops.sh doctor`（检查运行环境 + CLI 安装 + 授权状态）。不就绪时脚本会输出安装/授权指南并 `exit 1`，Agent 必须中止循环、把指南**原样呈现给用户**，待用户完成后重跑 `doctor` 再继续；完整指南见 `references/cli-setup.md`。
 - **凭据安全**：禁止代用户输入 token，禁止将凭据写入仓库文件、脚本、`.env` 或提交到版本库。
 - **运行环境**：仅支持 macOS 与 Windows。Windows 下 `git-ops.sh` 必须在 Git Bash 中运行（随 Git for Windows 自带），不支持 CMD / PowerShell。macOS 宿主默认 shell 常为 zsh；Agent 执行安装/更新协议等**内联 shell** 时必须用 **bash**（zsh 缺 `shopt` / `nullglob` 等 bash 内建，直接跑会 `command not found`）。随附脚本已带 `#!/usr/bin/env bash`，经 `./script.sh` 调用恒在 bash 下运行、天然安全。
 
@@ -144,7 +144,7 @@ description: >-
 |------|-----------|------|
 | `issue retry <N> incr` | **仅 QA（reviewer）** | 审查 FAIL 退回 `riper-plan` 时登记 +1；当前已为 `riper-retry-3` 时拒绝并提示转 `riper-blocked` |
 | `issue retry <N> get` | 三角色（只读） | 输出当前 K（无 retry 标签输出 `0`），供判定是否超限 |
-| `issue retry <N> reset` | 三角色 | 清零（移除全部 `riper-retry-*`），新一轮闭环开始时用 |
+| `issue retry <N> reset` | 三角色 | 清零（移除全部 `riper-retry-*`），仅用户明确授权重置时用；恢复、接入或重新调用不得自动清零 |
 
 唯一入口：`./scripts/git-ops.sh --role reviewer issue retry <N> <incr|get|reset>`（脚本自动排他清理同族）。`issue label` 子命令被禁止触碰本族。
 
@@ -169,12 +169,32 @@ description: >-
 
 1. **计划即契约**：Execute 阶段必须逐条满足 `plan.md` 中的步骤与验收标准，**禁止跳过、禁止合并、禁止添加计划外功能**。HOW（实现路径）由 `references/lazy-ladder.md` 约束：在验收范围内取更高 rung 的最短 diff；合法改道须按该文件格式评论。验收标准冻结 WHAT；涉及文件与逻辑说明是建议，不是牢笼。
 2. **计划有误必回退**：发现计划有误（缺步骤、错文件、顺序不对）必须：立即**中断执行** → 退回 Plan 阶段更新 `plan.md` 并同步评论到 Issue → 再从更新后的步骤继续。严禁"边改边做、事后补计划"。
-3. **验收只认计划**：Review 阶段只依据 `plan.md` 中的验收标准判定 PASS/FAIL，不接受"代码能跑就算过"。
+3. **验收只认计划**：Review 阶段依据冻结验收与明确边界按 §2.1 判定 PASS/FAIL/无法验证，不接受"代码能跑就算过"。
 4. **文档先行**：任何代码提交之前，对应的 spec / design / plan 必须已经存在且填充完整。
+
+### 2.1 判定、交接与强制边界
+
+本节定义跨角色共同决策；角色文件引用本节，不另设一套出口。Skill 内的 T0 仅表示本协议优先级，不覆盖用户指令或宿主的更高层指令。
+
+|判定|证据条件|后续|
+|---|---|---|
+|PASS|当前基线的验收项已实际验证满足，且无确认越界|全部 PASS 后才能进入集成交付|
+|FAIL|实际证据证明违反冻结验收或角色/计划边界|QA 登记一次该轮失败，退 plan；PM 确认或修订后开发继续|
+|无法验证|环境、权限或证据不足，不能确定是否满足|保留未知；不当产品失败，不因此增加 retry，不得判全部通过|
+
+不能用后续建议新增验收；明确越界仍可 FAIL。同一审查轮次多个失败只增加一次 retry；已记录的同一报告恢复不重复增加。重试3表示自动重试预算已用完；恢复须核验既有记录，不通过接入/重跑/reset绕过。
+
+每次交接在原 Issue 评论记录：Issue/仓库、有效产物版本与链接、当前状态/下一角色、已验证提交 SHA（没有则 unknown）、已完成/未完成项、验证方式与判定、阻塞/恢复条件及授权范围。主路径不建本地交接副本。
+
+[T] 的 pending-handoff 只授权下一有权角色进行已记录的标签对齐；严格回读并追加 complete 后才开始业务工作。开发、QA 同样必须核对，不凭已有 plan 越过该闸门。
+
+脚本只强制其实现覆盖的命令权限和路径；不认证角色身份、语义质量、关闭证据或授权。guard 失败先停止并核对归属，不删除他人变更。无角色兼容放行不能作为 Agent 绕过依据。缺 CLI/授权时停止远端流程并交指南；fallback 只保存可支持的未完成产物，不等于通过自检、读取完整或获得继续执行许可。
 
 ## 3. RIPER 状态机循环
 
 ### 3.0 前置自检（每轮循环开始前）
+
+先识别 §3.0.1 第0层的调用意图，再执行本节。help 直接本地应答并停止；仅检查更新只运行 check-update；仅 doctor 完成诊断后停止，不初始化标签。复核/建议类请求只读回答，不自动当新目标建票；用户授权开票后才进入 [G]。进入 Issue 闭环才执行下列完整前置流程。doctor 因缺标签失败时，先确认 CLI/授权成功，再执行 labels init 并重跑 doctor；其他失败不得用初始化标签掩盖。
 
 1. **Skill 更新检查（先于 doctor；本会话尚未执行过时）**：以**当前加载的 `SKILL.md` 所在目录**为 Skill 根（默认 `~/.agents/skills/iloop`，不是目标项目仓库根），执行：
    `bash <Skill根>/scripts/check-update.sh`
@@ -226,7 +246,7 @@ doctor / `labels init` 通过后、加载任何角色之前执行。本层是协
 
 #### 第 1 层：阶段分发（Issue 证据）
 
-对编号 N 执行 `./scripts/git-ops.sh issue get <N> --strict`（此时仍无角色；`get` 不限角色）。正文或评论读取失败即暂停，禁止将部分输出当完整依据。从标签读取唯一 `riper-*`、`p0`–`p3`、`riper-retry-*`。用下列标记扫描评论与降级文件 `docs/issues/<N>/`（命中任一即视为产物存在）：
+对编号 N 执行 `./scripts/git-ops.sh issue get <N> --strict`（此时仍无角色；`get` 不限角色）。正文或评论读取失败即暂停，禁止将部分输出当完整依据。从标签读取唯一 `riper-*`、`p0`–`p3`、`riper-retry-*`。用下列标记扫描评论与降级文件 `docs/issues/<N>/`（命中只视为候选产物，不证明有效或冻结）：
 
 | 产物 | 评论或文件标记 |
 |------|----------------|
@@ -244,9 +264,11 @@ PM 按 templates/intake.md 先查证、评论待确认问题/标签建议，再�
 接入完成回到本层按下面证据规则分发；Research 引用接入证据只补缺口。`[T]` 没有新状态标签，不替代研究/冻结计划；详情、字段、并发及 #37 能力边界均见接入协议。裸入口仅对用户已确认目标执行本段，显式编号共用本段。
 
 
-**证据阶段**：无 spec → 早于研究；有 spec 无 design → 研究完成；有 design 无 plan → 创新完成；有冻结 plan → 计划完成；有 verify-report 或 retry>0 且状态为 `riper-plan` → FAIL 回退修计划（不要当第一版 plan 来写）。
+**有效性核验**：标题标记只定位候选；按评论时间与明确修订关系找到当前基线，检查所属 Issue、原始需求/验收范围、内容完整性、待解问题、计划冻结记录与代码基线适用性。新评论不自动取代旧基线；相互冲突或无法确定有效版本时暂停澄清，不把标题、空模板、旧 PASS 当有效证据。
 
-**切入点 = min(标签声称阶段, 证据阶段)**。标签超前于产物时，以产物为准往回退（例如标了 `riper-execute` 但没有 plan → `[P]`）。
+**证据阶段**：以下 spec/design/plan 均指有效产物。仅首版或明确替代当前基线的成功阶段产物推进；FAIL 后最新 plan 的 PM 确认/修订必须晚于对应失败报告，否则仍属修计划。无 spec → 早于研究；有 spec 无 design → 研究完成；有 design 无 plan → 创新完成；有冻结 plan → 计划完成；有 verify-report 或 retry>0 且状态为 `riper-plan` → FAIL 回退修计划（不要当第一版 plan 来写）。
+
+**先保护终态与协调信号，再核验产物决定切入点**。有效 spec 完成后可由 research 进入 innovation，有效 design 完成后可由 innovation 进入 plan；已冻结 plan 且非 FAIL 修订中可由 plan 进入 execute，按 C6 对齐状态，避免停在同阶段反复分发。证据不足时以证据支持的阶段限制超前标签；不能机械取 min 而阻止已完成阶段合法前进。标签超前于产物时，以产物为准往回退（例如标了 `riper-execute` 但没有 plan → `[P]`）。
 
 | 切入点（回退后） | 0 帧角色 | 进入 |
 |------------------|----------|------|
@@ -260,7 +282,7 @@ PM 按 templates/intake.md 先查证、评论待确认问题/标签建议，再�
 
 GitHub/GitLab 的 Open **不等于**可写代码。无 `riper-*` 且无冻结 plan → `[R]`，禁止直接交给开发。
 
-**glab/tea 降级**：`issue get` 看不到标签时，在对话中声明降级，改用产物标记；产物也没有则当无状态，切入 `[R]`。不要为此改用 REST API，也不要为此去实现 `issue get --json`。
+**glab/tea 降级**：列表看不到标签时严格读取目标真实标签；严格详情仍缺标签/认领/终态保护所需字段时暂停，不能仅靠产物标记把不可见状态当无状态或重写标签。不要为此改用 REST API，也不要为此去实现 `issue get --json`。
 
 **状态写入（C6）**：进入某 §3.x 时，`issue status` 对齐该阶段仅当：当前无状态、当前等于本阶段、当前早于本阶段，或本次切入来自产物回退（证据早于标签，允许把超前标签拉回证据阶段），或用户显性「重做某阶段」，或 QA FAIL 退回 `riper-plan`。禁止在分发结果不是 `[R]` 时把 `riper-execute` / `riper-review` / `riper-verified` 改回 `riper-research`。
 
@@ -273,7 +295,8 @@ GitHub/GitLab 的 Open **不等于**可写代码。无 `riper-*` 且无冻结 pl
    │ 第 0 层：新目标 → PM [G] 草稿 → 确认 → create → 优先级 → riper-research
    ▼
 Issue(编号 N)
-   │ 启动分发（§3.0.1）：读标签 + 产物，取较早者；口头覆盖优先
+   │ 严格读取 → 终态/认领保护 → 必要时 PM [T] 查证与标签对齐
+   │ 启动分发（§3.0.1）：核验有效产物；合法续跑；口头覆盖受权限约束
    ▼
   ┌─────────┬─────────┬─────────┬─────────┬──────────┐
   ▼         ▼         ▼         ▼         ▼          ▼
@@ -287,7 +310,7 @@ Issue(编号 N)
                                       │ 重试 ≤ 3 次
                              全部 PASS │
                                       ▼
-                   riper-verified → QA 关闭 Issue
+                   riper-verified → QA 推送并核验 PR → 写回证据 → 关闭并释放认领
                    （超限：riper-blocked，人工介入）
 ```
 
@@ -328,7 +351,7 @@ Issue(编号 N)
 
 ### 3.3 [I] 创新阶段（Innovation）— PM
 
-1. **保持 PM 角色**（若切换过会话，重新读取 `roles/planner.md`）。
+1. **重新读取 `roles/planner.md` 与梯子**，保持 PM 角色。
 2. 切换状态：`./scripts/git-ops.sh --role planner issue status <N> riper-innovation`。
 3. 基于 spec 思考**至少两种**技术方案，按复杂度、风险、可测性、可维护性、与现有代码契合度、**代码量**、**是否新依赖**对比，选定最终方案并说明理由（先读 `references/lazy-ladder.md`）。
 4. design 全文评论写回 Issue（主路径，基于 `templates/design.md` 组织）；仅当远程 Issue 不可用时降级写入 `docs/issues/<N>/design.md`。
@@ -336,12 +359,12 @@ Issue(编号 N)
 
 ### 3.4 [P] 计划阶段（Plan）— PM
 
-1. **保持 PM 角色**。
+1. **重新读取 `roles/planner.md` 与梯子**，保持 PM 角色。
 2. 切换状态：`./scripts/git-ops.sh --role planner issue status <N> riper-plan`。
 3. 基于 design 拆解**极细粒度**原子任务：每步只做一件事，含编号、涉及文件、逻辑说明、验收标准、完成状态 `[ ]`。**验收标准冻结 WHAT**（可观察结果，禁止把实现类名/新建文件当作验收项）；**涉及文件与逻辑说明是建议 HOW，不冻结**。
-4. **主路径不落盘**：plan 随下一步的合并评论写回 Issue；仅当远程 Issue 不可用时降级填充 `docs/issues/<N>/plan.md`（基于 `templates/plan.md`）。
-5. 将 spec、design、plan 三份内容合并评论写回 Issue：
-   `./scripts/git-ops.sh --role planner issue comment <N> "<三份文档合并内容>"`。
+4. **主路径不落盘**：plan 随下一步的独立评论写回 Issue；仅当远程 Issue 不可用时降级填充 `docs/issues/<N>/plan.md`（基于 `templates/plan.md`）。
+5. 仅评论写回本次 plan 全文，并引用当前有效 spec、design 的评论链接或标识，不重复粘贴三份全文；修订时说明替代的基线与变化。
+   `./scripts/git-ops.sh --role planner issue comment <N> "<plan 全文与输入引用>"`。
 6. 计划写回 Issue 后即视为**冻结基线**；后续修改必须走"中断→回退→更新→再同步"流程，并登记在 plan 的"计划修订记录"中。
 
 ### 3.5 [E] 执行阶段（Execute）— 开发
@@ -360,7 +383,7 @@ Issue(编号 N)
 ### 3.6 [R] 审查阶段（Review）— QA
 
 1. **加载角色**：先读 `references/lazy-ladder.md`，再读 `roles/reviewer.md`，切换为 QA。
-2. 对照计划（Issue 评论中的 plan，或降级产生的本地 `plan.md`）每一步的验收标准，**以黑盒方式**执行测试与代码审查（读代码属只读，禁止修改业务代码，T0）。PASS/FAIL 只认验收标准 + 越界行为（多余功能或未批准新依赖）；多碰文件本身不 FAIL。
+2. 对照计划（Issue 评论中的 plan，或降级产生的本地 `plan.md`）每一步的验收标准，**以黑盒方式**执行测试与代码审查（读代码属只读，禁止修改业务代码，T0）。PASS/FAIL/无法验证按 §2.1 判定，只认验收标准 + 越界行为（多余功能或未批准新依赖）；多碰文件本身不 FAIL。
 3. 如需编写测试脚本，默认生成到 `test/` 目录（用户显性指定时以用户为准）。
 4. 按 `templates/verify-report.md` 生成 verify-report 全文并评论写回 Issue：逐项判定、证据、失败原因分析；附加检查含可删清单（`delete:` / `stdlib:` / `native:` / `yagni:` / `shrink:`），**不单独 FAIL、不阻塞判定、不计入重试**。
 5. 仅当远程 Issue 不可用时降级写入 `docs/issues/<N>/verify-report.md`，恢复后在评论中引用。
@@ -375,10 +398,11 @@ Issue(编号 N)
   3. QA 按 [集成契约](references/integration.md) 执行 `integration push <N>`、PR 查重/创建/回读，并将 URL、base/head 与已验收提交评论回 Issue；默认不自动合并。离线或无推送权限仅本地合并仍保持 open，无法继续则报告并按权限转 blocked。
   4. 仅在 PR 交付已确认（或有已进上游证据）后，由 QA 执行 `./scripts/git-ops.sh --role reviewer issue close <N>` 关闭 Issue（关闭权专属 QA），结束循环；
   5. 释放认领：`./scripts/git-ops.sh issue claim <N> release`（移除 `riper-claimed` + 释放评论；闭环终态不再占用该 Issue）。
-- **存在 FAIL**：
+- **无法验证且无已确认 FAIL**：不设置 verified、不关闭、不增加 retry；报告缺失环境/证据、已完成项与恢复条件。无法推进时由开发/QA 按权限转 blocked 并释放认领，恢复后严格重读与分发。
+- **存在已确认 FAIL**（即使同时有无法验证项）：
   1. 登记重试计数（**防死循环：最多重试 3 次**）：`./scripts/git-ops.sh --role reviewer issue retry <N> incr`（排他写入 `riper-retry-K`，不依赖 Agent 记忆）；
   2. QA 退回计划：`./scripts/git-ops.sh --role reviewer issue status <N> riper-plan`，并评论失败分析；
-  3. PM 修订计划（主路径在 Issue 评论中修订；降级模式下修订本地 `plan.md`）并同步评论；
+  3. PM 核对根因：计划有误才修订并登记；仅实现缺陷则评论确认冻结基线仍有效和重做范围，不改验收标准。PM 不能写 execute，切开发后由开发对齐状态；
   4. 重新走 [E] → [R]。
 - **重试已达上限仍有 FAIL**（`./scripts/git-ops.sh --role reviewer issue retry <N> get` 返回 `3`，此时 `incr` 也会被拒绝）：停止循环，`./scripts/git-ops.sh --role reviewer issue status <N> riper-blocked`，在 Issue 下评论说明卡点，并 `./scripts/git-ops.sh issue claim <N> release` 释放认领（本会话不再持有，待人工介入后可重新认领），等待人工介入。
 

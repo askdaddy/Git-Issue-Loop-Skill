@@ -1,5 +1,9 @@
 # 集成、关闭与发布契约
 
+## 前提与无法验证
+
+判定依据统一见 SKILL.md §2.1。产品已确认 FAIL 与环境/证据不足分开记录，只有全部验收实际 PASS 且无确认越界才交付；纯环境缺口不计 retry。角色/模板不另设 PASS 后直接关闭的快捷路径。
+
 ## 默认交付
 
 验收 PASS → QA `issue status N riper-verified` → QA 推分支并交付 PR → 回读写回 → QA `issue close N` → 释放认领。
