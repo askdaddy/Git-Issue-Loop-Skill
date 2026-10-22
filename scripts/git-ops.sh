@@ -63,6 +63,11 @@
 
 set -euo pipefail
 
+# 结构化运行事件（opt-in，FD3 NDJSON）。契约见 references/runtime-output.md。
+# 默认完全关闭；只有 main 路由到受覆盖命令时才 arm，其他命令零事件、零额外调用。
+# shellcheck source=runtime-events.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/runtime-events.sh"
+
 # ---------------------------------------------------------------------------
 # 辅助函数
 # ---------------------------------------------------------------------------
@@ -543,6 +548,7 @@ check_permission() {
       if [[ "${ROLE}" == "developer" ]]; then
         printf '%s\n' '[iloop-feedback] rule=ROLE-001 outcome=intercepted' >&2
         log_error "权限拒绝：Developer 禁止 ${action} Issue（执行者无权自我判定完成）。"
+        _iloop_evt_mark "denied" "ROLE-001" "permission-denied" "none"
         exit 1
       fi
       ;;
@@ -550,6 +556,7 @@ check_permission() {
       if [[ "${ROLE}" != "planner" ]]; then
         printf '%s\n' '[iloop-feedback] rule=ROLE-001 outcome=intercepted' >&2
         log_error "权限拒绝：优先级仅 PM（planner）可在研究阶段判定设置。"
+        _iloop_evt_mark "denied" "ROLE-001" "permission-denied" "none"
         exit 1
       fi
       if ! is_priority_label "${value}"; then
@@ -565,6 +572,7 @@ check_permission() {
       if ! status_allowed "${ROLE}" "${value}"; then
         printf '%s\n' '[iloop-feedback] rule=ROLE-001 outcome=intercepted' >&2
         log_error "权限拒绝：角色 ${ROLE} 无权将状态切换为 '${value}'。"
+        _iloop_evt_mark "denied" "ROLE-001" "permission-denied" "none"
         exit 1
       fi
       ;;
@@ -588,6 +596,7 @@ check_permission() {
       if [[ "${ROLE}" != "reviewer" ]]; then
         printf '%s\n' '[iloop-feedback] rule=ROLE-001 outcome=intercepted' >&2
         log_error "权限拒绝：重试计数由 QA（reviewer）在审查 FAIL 时登记，${ROLE} 无权 incr。"
+        _iloop_evt_mark "denied" "ROLE-001" "permission-denied" "none"
         exit 1
       fi
       ;;
@@ -604,6 +613,7 @@ check_permission() {
         planner|developer|reviewer) ;;
         *)
           log_error "guard：未知角色 '${value}'（应为 planner / developer / reviewer）。"
+          _iloop_evt_mark "denied" "ROLE-001" "permission-denied" "none"
           exit 1
           ;;
       esac
@@ -784,23 +794,29 @@ cmd_issue_get() {
 cmd_issue_comment() {
   local num="$1" content="$2"
   # 平台检测失败时必须显式报错退出（命令替换的失败会被 case 吞掉）
-  local __plat
+  local __plat write_rc=0
   __plat="$(detect_platform)" || exit 1
-  case "${__plat}" in
-    gh)
-      require_cli gh
-      gh issue comment "${num}" --body "${content}"
-      ;;
-    glab)
-      require_cli glab
-      glab issue note "${num}" --message "${content}"
-      ;;
-    tea)
-      require_cli tea
-      # tea 0.15.1：评论实体是 comments 子命令（issues 视图无 --comment flag）
-      tea_cmd comments add "${num}" "${content}"
-      ;;
-  esac
+  { case "${__plat}" in
+      gh)
+        require_cli gh
+        gh issue comment "${num}" --body "${content}"
+        ;;
+      glab)
+        require_cli glab
+        glab issue note "${num}" --message "${content}"
+        ;;
+      tea)
+        require_cli tea
+        # tea 0.15.1：评论实体是 comments 子命令（issues 视图无 --comment flag）
+        tea_cmd comments add "${num}" "${content}"
+        ;;
+    esac
+  } || write_rc=$?
+  if [[ "${write_rc}" -ne 0 ]]; then
+    _iloop_evt_mark "failed" "unknown" "write-failed" "unknown"
+    return "${write_rc}"
+  fi
+  _iloop_evt_mark "success" "unknown" "completed" "remote-write"
 }
 
 # ---------------------------------------------------------------------------
@@ -1216,8 +1232,19 @@ cmd_issue_priority() {
   check_permission priority "${priority}"
 
   # 排他性保证：同族其他优先级标签一律移除（大小写不敏感，含 P0 之类变体）
-  raw_label_remove_family_ci "${num}" "${priority}" ${PRIORITY_LABELS} || return 1
-  raw_label_add "${num}" "${priority}"
+  if ! raw_label_remove_family_ci "${num}" "${priority}" ${PRIORITY_LABELS}; then
+    _iloop_evt_mark "failed" "unknown" "family-cleanup-failed" "unknown"
+    return 1
+  fi
+  _iloop_evt_mark "" "" "family-cleaned" ""
+  local add_rc=0
+  raw_label_add "${num}" "${priority}" || add_rc=$?
+  if [[ "${add_rc}" -ne 0 ]]; then
+    # 清理已完成、目标标签未确认写入：只声明子步骤完成，不伪称无副作用。
+    _iloop_evt_mark "partial" "unknown" "add-failed" "label-cleanup-only"
+    return "${add_rc}"
+  fi
+  _iloop_evt_mark "success" "unknown" "completed" "remote-write"
   log_info "优先级已设为 ${priority}（艾森豪威尔矩阵，同族标签已排他清理）。"
 }
 
@@ -1230,8 +1257,19 @@ cmd_issue_status() {
   check_permission status "${status}"
 
   # 排他性保证：同族其他状态标签一律移除（大小写不敏感，含大写变体）
-  raw_label_remove_family_ci "${num}" "${status}" ${STATUS_LABELS} || return 1
-  raw_label_add "${num}" "${status}"
+  if ! raw_label_remove_family_ci "${num}" "${status}" ${STATUS_LABELS}; then
+    _iloop_evt_mark "failed" "unknown" "family-cleanup-failed" "unknown"
+    return 1
+  fi
+  _iloop_evt_mark "" "" "family-cleaned" ""
+  local add_rc=0
+  raw_label_add "${num}" "${status}" || add_rc=$?
+  if [[ "${add_rc}" -ne 0 ]]; then
+    # 清理已完成、目标标签未确认写入：只声明子步骤完成，不伪称无副作用。
+    _iloop_evt_mark "partial" "unknown" "add-failed" "label-cleanup-only"
+    return "${add_rc}"
+  fi
+  _iloop_evt_mark "success" "unknown" "completed" "remote-write"
   log_info "状态已切换为 ${status}（同族状态标签已排他清理）。"
 }
 
@@ -1581,6 +1619,7 @@ cmd_guard() {
   if [[ -n "${num}" ]]; then
     if ! valid_issue_num "${num}"; then
       log_error "guard：Issue 编号必须是正整数（收到：'${num}'）。"
+      _iloop_evt_mark "failed" "unknown" "" "none"
       exit 1
     fi
     local cur owner=""
@@ -1593,6 +1632,7 @@ cmd_guard() {
         printf '%s\n' '[iloop-feedback] rule=WORKSPACE-001 outcome=suspected' >&2
         log_error "guard：当前分支 ${cur} 属 Issue #${owner}，与给定的 Issue #${num} 不一致。"
         log_error "请切到 Issue #${num} 的工作区，或用正确编号：./scripts/git-ops.sh guard ${role} ${owner}"
+        _iloop_evt_mark "failed" "WORKSPACE-001" "branch-mismatch" "none"
         exit 1
       fi
     else
@@ -1605,6 +1645,7 @@ cmd_guard() {
   changed="$(git status --porcelain)"
   if [[ -z "${changed}" ]]; then
     log_info "guard(${role}) 通过：无待检变更（工作区干净）。"
+    _iloop_evt_mark "success" "unknown" "clean" "none"
     return 0
   fi
 
@@ -1635,6 +1676,7 @@ EOF_STATUS
 
   if [[ "${violated}" -eq 0 ]]; then
     log_info "guard(${role}) 通过：${total} 个变更文件均在可写区域内。"
+    _iloop_evt_mark "success" "unknown" "completed" "none"
     return 0
   fi
 
@@ -1643,6 +1685,7 @@ EOF_STATUS
   printf '%s' "${violations}" >&2
   log_error "角色 ${role} 的可写区域："
   role_writable_paths "${role}" >&2
+  _iloop_evt_mark "failed" "WORKSPACE-001" "violations" "none"
   exit 1
 }
 
@@ -2162,6 +2205,7 @@ main() {
     guard)
       # 第二参数（Issue 编号）可选；超出 2 个走 usage
       [[ $# -ge 1 && $# -le 2 ]] || usage
+      _iloop_evt_arm "guard" "${2:-}"
       cmd_guard "$@"
       ;;
     workspace)
@@ -2208,6 +2252,7 @@ main() {
           ;;
         comment)
           [[ $# -eq 2 ]] || usage
+          _iloop_evt_arm "issue.comment" "$1"
           cmd_issue_comment "$1" "$2"
           ;;
         label)
@@ -2220,10 +2265,12 @@ main() {
           ;;
         priority)
           [[ $# -eq 2 ]] || usage
+          _iloop_evt_arm "issue.priority" "$1"
           cmd_issue_priority "$1" "$2"
           ;;
         status)
           [[ $# -eq 2 ]] || usage
+          _iloop_evt_arm "issue.status" "$1"
           cmd_issue_status "$1" "$2"
           ;;
         retry)
