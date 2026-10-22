@@ -37,4 +37,4 @@
 
 发布须独立授权、全套件通过、固定版本/SHA，tag 与 Release 都完成才称发布；不得修改 CHANGELOG 或实现，按集成协议交开发处理。仅本地合并保持 open；workspace finish 须确认最新上游包含分支且干净。
 
-运行时反馈按 `references/feedback-loop.md`：保留原拒绝、先纠偏，疑似不归责；离线草稿不等于上报，上游写入须授权，已发布待观察不等于已验证。交接字段按 SKILL.md §2.1 写回。
+运行时反馈按 `references/feedback-loop.md`：保留原拒绝、先纠偏，疑似不归责；离线草稿不等于上报，上游写入须授权，已发布待观察不等于已验证。交接字段按 SKILL.md §2.1 写回。验收报告与阶段摘要按 `references/runtime-output.md` 区分 `[script-observed]`、`[agent-declared]` 与 `[unverified]`，并关联 `run_id`；脚本事件成功不能替代独立验收，未验证项不得写成 PASS。

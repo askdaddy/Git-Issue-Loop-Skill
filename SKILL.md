@@ -412,6 +412,14 @@ Issue(编号 N)
 
 `bash <Skill根>/scripts/feedback.sh draft <permission|guard|evidence> <suspected|confirmed|intercepted|false-positive>` 仅输出有限字段草稿，不联网、不落盘、不上报；所有角色可用。上游写入必须明确授权并经维护工作副本的 git-ops.sh，详见协议。
 
+## 3.9 运行时输出与阶段摘要（可选观测）
+
+默认关闭。开启后脚本只把结构化事件写入**调用者预先打开的 fd3**（`exec 3>…` + `ILOOP_EVENTS_FD=3`），不写日志文件、不联网；首版覆盖 `issue priority` / `issue status` / `issue comment` / `guard`。字段枚举、`run_id` 跨进程传递、失败隔离与脱敏边界见 [运行时输出契约](references/runtime-output.md)。
+
+Agent 在启动/分发、阶段交接、暂停、恢复、结束时按 [阶段摘要模板](templates/run-summary.md) 说明当前阶段与角色、进入依据、已完成/未完成、下一步与等待原因，区分 `[script-observed]`、`[agent-declared]` 与 `[unverified]`，并关联 `run_id`。已有业务 Issue 仅在关键节点按合理批次写回评论；无 Issue、只读候选、help 或未确认目标不写评论；不复制 spec/design/plan 全文，不建本地双写或事件日志。
+
+**边界**：脚本操作成功不等于阶段完成或验收 PASS；摘要写回失败或部分完成须如实报告，重试前先去重，不盲目重复评论。事件与摘要都不改变角色权限、远端写入语义或产品验收判定。
+
 ## 4. 快速用法
 
 ```
@@ -440,6 +448,7 @@ Issue(编号 N)
 ./scripts/git-ops.sh workspace start <N>                          → 为 Issue N 建隔离工作区：仓库外 ../.iloop-worktrees/<repo>/<N> + riper/<N> 分支，基于 origin/<默认分支>
 ./scripts/git-ops.sh workspace finish <N>                         → 清理 Issue N 的本地工作区（仅当干净且已合并进上游；不推送、不合并）
 ./scripts/git-ops.sh doctor                                       → 环境 + CLI + 授权 + 标签体系就绪自检
+exec 3>events.ndjson; ILOOP_EVENTS_FD=3 ./scripts/git-ops.sh …     → 受覆盖命令向 fd3 写一条 NDJSON 事件（默认关闭，契约见 references/runtime-output.md）
 ```
 
 ## 5. 安装与注册（让 `/iloop` 生效）

@@ -42,4 +42,4 @@ QA FAIL 统一先回 plan：计划缺陷才修订；仅实现缺陷则记录原�
 
 信息不足、读取不完整、阶段矛盾、他人认领或标签变更失败即暂停并说明恢复条件；需要 blocked 状态时交有权角色，不越权写入。
 
-运行时偏差遵循 `references/feedback-loop.md`：先纠偏、保留事实，疑似不归责；上游反馈写入须授权，不自动计产品 retry。简洁说明证据、假设与决定，无须扮演绝对确定的权威。
+运行时偏差遵循 `references/feedback-loop.md`：先纠偏、保留事实，疑似不归责；上游反馈写入须授权，不自动计产品 retry。简洁说明证据、假设与决定，无须扮演绝对确定的权威。启动/分发、交接、暂停、恢复与结束时按 `references/runtime-output.md` 与 `templates/run-summary.md` 给出摘要，区分脚本观察事实、Agent 声明与未验证项，不把命令成功写成阶段完成或验收 PASS。

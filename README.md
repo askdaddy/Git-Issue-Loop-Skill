@@ -66,6 +66,13 @@ CLIs: `gh`, `glab`, and `tea`.
 - Runtime feedback for permission refusals, workspace violations, and missing
   Issue evidence: correct the task, prepare a redacted offline draft, and submit
   to maintainers only with explicit authorization.
+- Optional structured runtime output: `issue priority`, `issue status`,
+  `issue comment`, and `guard` emit one NDJSON event on a caller-opened fd 3
+  (`ILOOP_EVENTS_FD=3`), plus a provenance-aware stage summary template
+  (`templates/run-summary.md`) that separates script-observed facts, Agent
+  declarations, and unverified items. Off by default: no local event log, no
+  network, and no change to stdout, stderr, or exit codes. See the
+  [runtime output contract](references/runtime-output.md).
 - QA delivery through a verified pull request, with separate authorization for
   merging and publishing. Local-only delivery keeps the Issue open.
 - 19 shell invariant suites under `test/`, covering CLI behavior through stubs
@@ -195,9 +202,10 @@ skill-manifest.json      Machine-readable installation contract
 scripts/git-ops.sh       Platform routing, Issue operations, and safeguards
 scripts/check-update.sh  Compares the installed Skill against the highest stable tag
 scripts/feedback.sh      Generates offline, limited-field feedback drafts
+scripts/runtime-events.sh Opt-in NDJSON runtime events written to fd 3
 roles/                   Planner, Developer, and Reviewer role instructions
-templates/               Intake, spec, design, plan, and verification-report templates
-references/              CLI setup, intake, feedback, integration, minimum-code ladder
+templates/               Intake, spec, design, plan, verification-report, and run-summary templates
+references/              CLI setup, intake, feedback, integration, runtime output, minimum-code ladder
 test/                    Shell invariant suites and intake protocol walkthroughs
 CHANGELOG.md             Stable-release change history
 docs/issues/<N>/         Degraded-fallback stage documents, written only when the
