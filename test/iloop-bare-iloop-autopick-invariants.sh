@@ -76,7 +76,9 @@ has '/iloop 我要实现 XXX' "goal bootstrap row intact"
 has '"落地 issue #42"' "explicit number row intact"
 has '"推进迭代"                    → 扫描 open issue' "backlog scan row intact"
 has '/iloop help                   → 输出技能用法' "help row intact"
-if grep -q '自动挑选报告只是入口路由产物' "${ROOT}/roles/planner.md"; then pass "planner role: pick report is not a spec input"; else fail "planner role: pick report boundary missing"; fi
+# Shared routing boundaries live in SKILL.md; roles reference that contract.
+# The report must remain conversation-only, not a persisted stage artifact.
+has '挑选报告是对话内产物.*不落盘、不写 Issue 评论' "shared contract: pick report is not persisted as a stage artifact"
 
 # ===========================================================================
 # (B) data availability — stub gh + throwaway repo routed by origin hostname
