@@ -2,7 +2,7 @@
 
 [简体中文](README_CN.md)
 
-Current stable release: [v0.6.11](https://github.com/askdaddy/Git-Issue-Loop-Skill/releases/tag/v0.6.11). See [CHANGELOG.md](CHANGELOG.md) for release history.
+Current stable release: [v0.6.12](https://github.com/askdaddy/Git-Issue-Loop-Skill/releases/tag/v0.6.12). See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 `iloop` is an Agent Skill for running an issue-driven RIPER engineering loop:
 **Goal registration → Research → Innovation → Plan → Execute → Review**. A plain

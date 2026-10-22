@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-当前稳定版：[v0.6.11](https://github.com/askdaddy/Git-Issue-Loop-Skill/releases/tag/v0.6.11)。版本变更见 [CHANGELOG.md](CHANGELOG.md)。
+当前稳定版：[v0.6.12](https://github.com/askdaddy/Git-Issue-Loop-Skill/releases/tag/v0.6.12)。版本变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 `iloop` 是一个面向 Agent 的 Issue 驱动 RIPER 研发闭环 Skill：
 **目标登记（Goal）→ 研究（Research）→ 创新（Innovation）→ 计划（Plan）→ 执行（Execute）→ 审查（Review）**。
