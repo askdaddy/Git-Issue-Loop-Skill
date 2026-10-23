@@ -960,7 +960,11 @@ clear_issue_family() {
     [[ "${member}" -eq 1 ]] || continue
     if ! raw_label_remove_checked "${num}" "${lab}"; then
       log_error "清空 ${family} 失败，可能部分完成；请回读核对，未自动重试。"
-      _iloop_evt_mark "partial" "unknown" "family-cleanup-failed" "unknown"
+      if [[ "${touched}" -eq 1 ]]; then
+        _iloop_evt_mark "partial" "unknown" "family-cleanup-failed" "unknown"
+      else
+        _iloop_evt_mark "failed" "unknown" "family-cleanup-failed" "unknown"
+      fi
       return 1
     fi
     touched=1
