@@ -159,6 +159,16 @@ description: >-
 | 工作区清理 | 环境能力保留 | 环境能力保留 | 收尾负责（已进上游） |
 | 改动业务代码 | ❌（T0） | ✅（限 plan 范围） | ❌（T0） |
 
+### 标签写入的目标检查与显式修复
+
+`issue priority` / `issue status`（含 none）、`issue retry incr|reset` 在标签写入前经官方 CLI 正向确认数字目标是 Issue；PR 明确拒绝，类型、编号或输出格式无法确认也拒绝。gh/glab 使用原生 JSON/jq；tea 使用 index/kind/url 的 TSV，旧 CLI 不支持可靠字段时停止，不以“查不到 PR”当 Issue。GitLab 的同号 Issue/MR 不混同。本检查尚未覆盖其他 issue 子命令，不能据此声称所有操作有类型保护。
+
+- `--role planner issue priority N none`：显式清空所有大小写优先级变体。
+- `--role <角色> issue status N none`：只可清当前角色有权设置的实际状态；若混有任一无权状态，删除前整体拒绝。无角色或未知角色不能清空；环境变量角色沿用现有解析规则。
+- none 是有明确理由的修复动作，不是正常闭环/接入的默认步骤。先记录理由与权限，再执行；不借此清合法阶段、retry/claim 或绕过终态保护。保留其他标签，删除后回读确认；空族幂等。读取、删除失败或族残留时停止报告已做/未确认，不盲重试、不回滚他人改动；跨请求无事务/CAS。
+- 重试仍用 `issue retry N reset`，按既有授权规则，不自动清零。不支持用 issue label 绕过受管族。
+- 本功能不提供清理历史 PR 标签的例外；PR 上的误标签仍交维护者另行处理。
+
 ### 1.2 标签体系
 
 **（1）优先级族（必须，排他，艾森豪威尔矩阵）**
@@ -170,7 +180,7 @@ description: >-
 | `p2` | 紧急不重要 | 尽快处理但可委派，低价值高时限 |
 | `p3` | 不重要不紧急 | backlog，择机处理 |
 
-设置方式：`./scripts/git-ops.sh --role planner issue priority <N> <p0|p1|p2|p3>`（脚本自动清理同族其他标签）。
+设置方式：`./scripts/git-ops.sh --role planner issue priority <N> <p0|p1|p2|p3|none>`（none 见显式修复规则；脚本自动清理同族其他标签）。
 
 **（2）状态族（必须，排他，描述 RIPER 各阶段）**
 
@@ -182,7 +192,7 @@ description: >-
 | `riper-execute` / `riper-review` | 开发 |
 | `riper-verified` / `riper-blocked` | QA（`riper-blocked` 开发也可设置，用于遭遇阻塞） |
 
-切换方式：`./scripts/git-ops.sh --role <角色> issue status <N> <状态>`（脚本自动清理同族其他状态）。
+切换方式：`./scripts/git-ops.sh --role <角色> issue status <N> <状态|none>`（none 见显式修复规则；脚本自动清理同族其他状态）。
 
 **（3）重试计数族（排他，持久化 QA 审查 FAIL 的轮次）**
 

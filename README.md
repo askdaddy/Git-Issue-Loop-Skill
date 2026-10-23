@@ -233,3 +233,18 @@ the default installer. Changes to the install protocol (`INSTALL.md` or
 For the normative workflow rules, see [SKILL.md](SKILL.md). For the Chinese
 version of this introduction, see [README_CN.md](README_CN.md). Stable release
 history is recorded in [CHANGELOG.md](CHANGELOG.md).
+
+## Safe label repair
+
+Label-writing `issue priority`, `issue status` and `issue retry incr/reset`
+require positive Issue identity from the official CLI. PRs and unconfirmed
+metadata are rejected before writes; unsupported older CLI formats fail closed.
+Other Issue operations do not yet share this type check.
+
+For an explicitly justified repair, use `--role planner issue priority N none`,
+or `--role <role> issue status N none`. Status clearing is limited to states
+that role may set; mixed unauthorized states reject the entire clear. These
+commands preserve unrelated labels and verify removal by rereading. Missing
+roles, failed reads/removals and remaining family labels cannot report success.
+They do not clear claims/retries, bypass intake/terminal protections, or repair
+historical PR labels. There is no cross-request transaction guarantee.

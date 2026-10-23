@@ -128,3 +128,9 @@ docs/issues/<N>/         降级落盘的阶段文档，仅当远程 Issue 平台
 `main` 是开发分支。每个稳定版都必须创建新的、不可复用的 `vX.Y.Z` tag，并发布对应的 GitHub Release 记录变更说明。预发布版本必须使用类似 `-beta.1` 的 SemVer 后缀，默认安装器会自动跳过。改动安装协议（`INSTALL.md` 或 `skill-manifest.json` 的 `installation`）必须随新的稳定 `vX.Y.Z` tag 发布。
 
 规范性工作流规则见 [SKILL.md](SKILL.md)。英文版项目介绍见 [README.md](README.md)，稳定版本历史见 [CHANGELOG.md](CHANGELOG.md)。
+
+## 安全修复标签
+
+`issue priority`、`issue status` 与 `issue retry incr/reset` 写标签前，由官方 CLI 正向确认目标是 Issue；PR、元数据无法确认或旧 CLI 不支持可靠格式时停止，禁止静默放行。其他 Issue 命令尚未统一类型检查。
+
+有明确理由的修复可用 `--role planner issue priority N none` 或 `--role <角色> issue status N none`。状态清空仅限该角色有权设置的实际状态；混有无权状态时整体拒绝。操作保留无关标签，删除后回读确认；无角色、读取/删除失败或族标签残留均不能报告成功。不清 retry/claim、不绕过接入和终态保护，不提供历史 PR 标签修复例外；多次请求之间没有事务保证。
