@@ -924,7 +924,7 @@ require_issue_target() {
     pull-request) log_error "#${num} 是 Pull Request / Merge Request，不是 Issue；已拒绝标签写入。" ;;
     *) log_error "无法确认 #${num} 是 Issue（${plat} 读取失败、字段缺失或格式不支持）；已拒绝标签写入。" ;;
   esac
-  _iloop_evt_mark "failed" "unknown" "target-check-failed" "none"
+  _iloop_evt_mark "failed" "unknown" "requested" "none"
   return 1
 }
 
