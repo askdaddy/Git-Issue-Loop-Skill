@@ -44,7 +44,7 @@ for flag,operation in flags.items():
  if flag not in args:continue
  label=args[args.index(flag)+1]
  with changes.open('a') as f:f.write(json.dumps([operation,label])+'\n')
- if operation=='remove' and mode=='delete-fail':sys.exit(7)
+ if operation=='remove' and (mode=='delete-fail' or (mode=='delete-second' and len(changes.read_text().splitlines())==2)):sys.exit(7)
  if operation=='remove' and mode!='retained':labels=[s for s in labels if s!=label]
  if operation=='add' and label not in labels:labels.append(label)
  state.write_text(''.join(s+'\n' for s in labels));sys.exit()
@@ -114,9 +114,11 @@ if tool=='tea' and args[:2]==['labels','list']:
   cp,l,wr,ca=probe(tool,['issue','priority','1','none'],['p1'],event=True)
   evt=json.loads((w/'events').read_text());require(cp.returncode==0 and evt['result']=='success',f'{tool} clear event success compatible',cp)
   cp,l,wr,ca=probe(tool,['issue','status','1','riper-plan'],target='pr',event=True)
-  evt=json.loads((w/'events').read_text());require(cp.returncode!=0 and evt['result']=='failed' and evt['rule']=='unknown' and evt['side_effects']=='none',f'{tool} type refusal event does not invent role blame',cp)
+  evt=json.loads((w/'events').read_text());require(cp.returncode!=0 and evt['result']=='failed' and evt['rule']=='unknown' and evt['side_effects']=='none' and evt['checkpoint']=='requested',f'{tool} type refusal event does not invent role blame',cp)
  cp,l,wr,ca=probe('gh',['issue','priority','1','none'],['p1'],mode='delete-fail',event=True)
  evt=json.loads((w/'events').read_text());require(cp.returncode!=0 and evt['result']=='failed' and evt['side_effects']=='unknown','first failed removal must not assert known partial completion',cp)
+ cp,l,wr,ca=probe('gh',['issue','priority','1','none'],['p0','p1'],mode='delete-second',event=True)
+ evt=json.loads((w/'events').read_text());require(cp.returncode!=0 and evt['result']=='partial' and evt['side_effects']=='unknown' and len(wr)==2 and l=={'p1'},'confirmed earlier removal then failure reports partial without replay',cp)
  for mode in ['wrong-number','wrong-kind','extra-row']:
   cp,l,wr,ca=probe('tea',['issue','priority','1','p1'],mode=mode)
   require(cp.returncode!=0 and not wr,'tea malformed typed metadata fails closed',cp)
