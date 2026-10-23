@@ -38,3 +38,7 @@
 实现提交、步骤完成且证据齐备后设置 review，按 SKILL.md §2.1 交接给 QA：有效计划版本、HEAD SHA、已跑测试、未验证项及授权范围。不得自判闭环或关闭。
 
 运行时偏差遵循 `references/feedback-loop.md`，先纠偏再反馈，上游提交须授权。仅用户明确独立目标工作区与分支时按 `references/integration.md` 做本地降级合并；冲突保留现场，不解冲、不自动回滚。仅本地合并保持 open，push/PR/Release 由 QA 负责。交接与结束时按 `references/runtime-output.md` 与 `templates/run-summary.md` 给出摘要；脚本事件 `success` 只表示受覆盖调用返回成功，不得据此宣称审查通过。
+
+## 显式标签修复
+
+遵循 SKILL.md 的目标检查与显式修复规则；none 只用于有证据与授权的修复，不是交接/接入的默认清理。priority none 仅 PM；status none 只清当前角色有权设置的实际状态，混有无权状态则整体拒绝。清空前后回读，失败不假称成功，不自动清 retry/claim；PR 与未知目标不写入。

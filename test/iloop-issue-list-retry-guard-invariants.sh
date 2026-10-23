@@ -32,6 +32,12 @@ ALL15="p0 p1 p2 p3 riper-research riper-innovation riper-plan riper-execute ripe
 mkdir -p "$WORK/ghbin"
 cat > "$WORK/ghbin/gh" <<'STUB'
 #!/usr/bin/env bash
+# Known positive Issue metadata for #37; label-read failure modes remain independent.
+if [[ "${1:-} ${2:-}" == "issue view" && " $* " == *" --json number,url "* ]]; then
+  echo "$*" >> "${STUB_LOG:-/dev/null}"
+  printf '%s\n' issue
+  exit 0
+fi
 echo "$*" >> "${STUB_LOG:-/dev/null}"
 [[ "${1:-} ${2:-}" == "auth status" ]] && exit 0
 if [[ "${1:-} ${2:-}" == "label list" ]]; then
@@ -88,6 +94,12 @@ chmod +x "$WORK/ghbin/gh"
 mkdir -p "$WORK/glabbin"
 cat > "$WORK/glabbin/glab" <<'STUB'
 #!/usr/bin/env bash
+# Known positive Issue metadata for #37; label-read failure modes remain independent.
+if [[ "${1:-} ${2:-}" == "issue view" && " $* " == *".web_url"* ]]; then
+  echo "$*" >> "${STUB_LOG:-/dev/null}"
+  printf '%s\n' issue
+  exit 0
+fi
 echo "$*" >> "${STUB_LOG:-/dev/null}"
 [[ "${1:-}" == "auth" ]] && exit 0
 if [[ "${1:-} ${2:-}" == "label list" ]]; then
@@ -153,6 +165,12 @@ chmod +x "$WORK/glabbin/glab"
 mkdir -p "$WORK/teabin"
 cat > "$WORK/teabin/tea" <<'STUB'
 #!/usr/bin/env bash
+# Known positive Issue metadata for #37; label-read failure modes remain independent.
+if [[ "${1:-}" == issues && " $* " == *" --fields index,kind,url "* ]]; then
+  echo "$*" >> "${STUB_LOG:-/dev/null}"
+  printf '%s\tIssue\thttps://gitea.example.com/o/r/issues/%s\n' "$2" "$2"
+  exit 0
+fi
 echo "$*" >> "${STUB_LOG:-/dev/null}"
 [[ "${1:-} ${2:-}" == "login list" ]] && { echo "https://gitea.example.com  gitea  someuser  <token>"; exit 0; }
 [[ "${1:-}" == "login" ]] && exit 0

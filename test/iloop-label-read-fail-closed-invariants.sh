@@ -24,6 +24,11 @@ make_repo() {
 mkdir -p "$WORK/glabbin"
 cat > "$WORK/glabbin/glab" <<'STUB'
 #!/usr/bin/env bash
+# Known positive Issue metadata for #37; label-read failure modes remain independent.
+if [[ "${1:-} ${2:-}" == "issue view" && " $* " == *".web_url"* ]]; then
+  printf '%s\n' issue
+  exit 0
+fi
 [[ "${1:-}" == "auth" ]] && exit 0
 if [[ "${1:-} ${2:-}" == "issue view" ]]; then
   if [[ " $* " == *" --output json "* ]]; then
@@ -66,6 +71,11 @@ chmod +x "$WORK/glabbin/glab"
 mkdir -p "$WORK/teabin"
 cat > "$WORK/teabin/tea" <<'STUB'
 #!/usr/bin/env bash
+# Known positive Issue metadata for #37; label-read failure modes remain independent.
+if [[ "${1:-}" == issues && " $* " == *" --fields index,kind,url "* ]]; then
+  printf '%s\tIssue\thttps://gitea.example.com/o/r/issues/%s\n' "$2" "$2"
+  exit 0
+fi
 [[ "${1:-} ${2:-}" == "login list" ]] && { echo "https://gitea.example.com user <token>"; exit 0; }
 if [[ "${1:-} ${2:-}" == "labels list" ]]; then
   echo "│ ID │ Color │ Name │ Description │"

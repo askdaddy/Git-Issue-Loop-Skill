@@ -100,8 +100,8 @@ Commands:
   git-ops.sh issue create "<title>" "<body>"       创建新 Issue
   git-ops.sh issue close <num>                     关闭 Issue
   git-ops.sh issue reopen <num>                    重新打开 Issue
-  git-ops.sh issue priority <num> <p0|p1|p2|p3>    设置优先级（艾森豪威尔矩阵，排他）
-  git-ops.sh issue status <num> <riper-*>          切换 RIPER 状态（排他）
+  git-ops.sh issue priority <num> <p0|p1|p2|p3|none>    设置优先级；none 仅显式 PM 清空并回读
+  git-ops.sh issue status <num> <riper-*|none>          切换状态；none 仅显式角色清其有权状态
   git-ops.sh issue retry <num> <incr|get|reset>    重试计数持久化（排他 riper-retry-K；incr 仅 QA 可用）
   git-ops.sh issue claim <num> <claim|release|get> 认领互斥（非排他 riper-claimed；claim 写标签+审计评论，已认领则拒绝抢占）
   git-ops.sh issue label <num> add <label>         添加自由标签（上下文召回用）
@@ -559,10 +559,13 @@ check_permission() {
         _iloop_evt_mark "denied" "ROLE-001" "permission-denied" "none"
         exit 1
       fi
-      if ! is_priority_label "${value}"; then
+      if [[ "${value}" != none ]] && ! is_priority_label "${value}"; then
         log_error "非法优先级：'${value}'（合法值：${PRIORITY_LABELS}，艾森豪威尔矩阵）。"
         exit 1
       fi
+      ;;
+    status-clear)
+      # 角色名已验证；按当前实际状态逐项校验，不能借 none 越权。
       ;;
     status)
       if ! is_status_label "${value}"; then
@@ -579,7 +582,7 @@ check_permission() {
     label-add|label-remove)
       # 互斥标签族必须走专用子命令，否则无法保证排他性
       if is_priority_label "${value}" || is_status_label "${value}"; then
-        log_error "标签 '${value}' 属于互斥标签族，请改用 'issue priority' / 'issue status' 子命令（保证排他性）。"
+        log_error "标签 '${value}' 属于互斥标签族，请改用 'issue priority' / 'issue status' 子命令；显式 none 可按角色权限清空该族。"
         exit 1
       fi
       if is_retry_label "${value}"; then
@@ -873,6 +876,120 @@ raw_label_create() {
       fi
       ;;
   esac
+}
+
+# 写入前的正向目标证明。只接收十进制编号，失败/字段缺失/旧 CLI 均关闭写路径。
+# GitLab 的 Issue/MR IID 独立，因此不以同号 MR 是否存在作为判据。
+require_issue_target() {
+  local num="$1" plat kind="unknown" out="" line idx item_kind url extra count=0
+  case "${num}" in ''|0*|*[!0-9]*) log_error "Issue 编号必须是无前导零的正整数。"; return 1 ;; esac
+  plat="$(detect_platform)" || return 1
+  require_cli "${plat}"
+  case "${plat}" in
+    gh)
+      kind="$(gh issue view "${num}" --json number,url --jq \
+        "if .number == ${num} and (.url | endswith(\"/issues/${num}\")) then \"issue\" elif .number == ${num} and (.url | endswith(\"/pull/${num}\")) then \"pull-request\" else \"unknown\" end" 2>/dev/null)" || kind=unknown
+      if [[ "${kind}" != issue && "${kind}" != pull-request ]]; then
+        out="$(gh pr view "${num}" --json number,url --jq \
+          "if .number == ${num} and (.url | endswith(\"/pull/${num}\")) then \"pull-request\" else \"unknown\" end" 2>/dev/null)" || out=unknown
+        [[ "${out}" != pull-request ]] || kind=pull-request
+      fi
+      ;;
+    glab)
+      kind="$(glab issue view "${num}" --output json --jq \
+        "if .iid == ${num} and (.web_url | endswith(\"/-/issues/${num}\")) then \"issue\" elif .iid == ${num} and (.web_url | endswith(\"/-/merge_requests/${num}\")) then \"pull-request\" else \"unknown\" end" 2>/dev/null)" || kind=unknown
+      ;;
+    tea)
+      # 只请求固定字段，拒绝旧版本忽略格式、额外行、错编号或未知 kind。
+      if out="$(tea_cmd issues "${num}" --output tsv --fields index,kind,url 2>/dev/null)"; then
+        kind=unknown
+        while IFS= read -r line; do
+          line="${line%$'\r'}"
+          [[ -n "${line}" ]] || continue
+          [[ "${line}" != $'index\tkind\turl' && "${line}" != $'INDEX\tKIND\tURL' ]] || continue
+          count=$((count + 1))
+          IFS=$'\t' read -r idx item_kind url extra <<< "${line}"
+          [[ "${idx}" == "${num}" && -z "${extra}" ]] || continue
+          case "${item_kind}:${url}" in
+            issue:http*/issues/"${num}"|Issue:http*/issues/"${num}") kind=issue ;;
+            pull:http*/pulls/"${num}"|Pull:http*/pulls/"${num}"|pull-request:http*/pulls/"${num}") kind=pull-request ;;
+          esac
+        done <<< "${out}"
+        [[ "${count}" -eq 1 ]] || kind=unknown
+      fi
+      ;;
+  esac
+  case "${kind}" in
+    issue) return 0 ;;
+    pull-request) log_error "#${num} 是 Pull Request / Merge Request，不是 Issue；已拒绝标签写入。" ;;
+    *) log_error "无法确认 #${num} 是 Issue（${plat} 读取失败、字段缺失或格式不支持）；已拒绝标签写入。" ;;
+  esac
+  _iloop_evt_mark "failed" "unknown" "requested" "none"
+  return 1
+}
+
+# 清空路径不复用 best-effort remove：真实失败必须上抛，不能伪报清空成功。
+raw_label_remove_checked() {
+  local num="$1" label="$2" plat
+  plat="$(detect_platform)" || return 1
+  require_cli "${plat}"
+  case "${plat}" in
+    gh) gh issue edit "${num}" --remove-label "${label}" >/dev/null ;;
+    glab) glab issue update "${num}" --unlabel "${label}" >/dev/null ;;
+    tea) tea_cmd issues edit "${num}" --remove-labels "${label}" >/dev/null ;;
+  esac
+}
+
+# 先读、全量权限预检、按实际名称删除、再读核验；不改无关族、不盲重试。
+clear_issue_family() {
+  local num="$1" family="$2" current remaining lab lc touched=0 member
+  current="$(raw_issue_labels "${num}")" || { log_error "读取标签失败，未开始清空。"; return 1; }
+  # 全量预检必须在第一条删除前完成，防止混合有权/无权状态被部分清空。
+  while IFS= read -r lab; do
+    lc="$(printf '%s' "${lab}" | tr '[:upper:]' '[:lower:]')"
+    if [[ "${family}" == status ]] && is_status_label "${lc}" && ! status_allowed "${ROLE}" "${lc}"; then
+      log_error "权限拒绝：${ROLE} 无权清空状态 '${lab}'；未删除任何标签。"
+      _iloop_evt_mark "denied" "ROLE-001" "permission-denied" "none"
+      return 1
+    fi
+  done <<< "${current}"
+  while IFS= read -r lab; do
+    lc="$(printf '%s' "${lab}" | tr '[:upper:]' '[:lower:]')"
+    member=0
+    if [[ "${family}" == priority ]]; then is_priority_label "${lc}" && member=1; else is_status_label "${lc}" && member=1; fi
+    [[ "${member}" -eq 1 ]] || continue
+    if ! raw_label_remove_checked "${num}" "${lab}"; then
+      log_error "清空 ${family} 失败，可能部分完成；请回读核对，未自动重试。"
+      if [[ "${touched}" -eq 1 ]]; then
+        _iloop_evt_mark "partial" "unknown" "family-cleanup-failed" "unknown"
+      else
+        _iloop_evt_mark "failed" "unknown" "family-cleanup-failed" "unknown"
+      fi
+      return 1
+    fi
+    touched=1
+  done <<< "${current}"
+  if ! remaining="$(raw_issue_labels "${num}")"; then
+    log_error "清空后回读失败，结果未确认；未报告成功。"
+    _iloop_evt_mark "failed" "unknown" "family-cleanup-failed" "unknown"
+    return 1
+  fi
+  while IFS= read -r lab; do
+    lc="$(printf '%s' "${lab}" | tr '[:upper:]' '[:lower:]')"
+    member=0
+    if [[ "${family}" == priority ]]; then is_priority_label "${lc}" && member=1; else is_status_label "${lc}" && member=1; fi
+    if [[ "${member}" -eq 1 ]]; then
+      log_error "清空后仍存在 ${family} 族标签，结果未确认；未自动重试。"
+      _iloop_evt_mark "failed" "unknown" "family-cleanup-failed" "unknown"
+      return 1
+    fi
+  done <<< "${remaining}"
+  if [[ "${touched}" -eq 1 ]]; then
+    _iloop_evt_mark "success" "unknown" "completed" "remote-write"
+  else
+    _iloop_evt_mark "success" "unknown" "completed" "none"
+  fi
+  log_info "已清空 ${family} 族标签（回读确认，无关标签未写入）。"
 }
 
 # 给 Issue 添加标签
@@ -1229,7 +1346,12 @@ cmd_issue_label() {
 cmd_issue_priority() {
   local num="$1" priority="$2"
 
+  if [[ "${priority}" == none && -z "${ROLE}" ]]; then
+    log_error "清空优先级必须显式指定 --role planner。"; return 1
+  fi
   check_permission priority "${priority}"
+  require_issue_target "${num}" || return 1
+  if [[ "${priority}" == none ]]; then clear_issue_family "${num}" priority; return; fi
 
   # 排他性保证：同族其他优先级标签一律移除（大小写不敏感，含 P0 之类变体）
   if ! raw_label_remove_family_ci "${num}" "${priority}" ${PRIORITY_LABELS}; then
@@ -1254,7 +1376,15 @@ cmd_issue_priority() {
 cmd_issue_status() {
   local num="$1" status="$2"
 
+  if [[ "${status}" == none ]]; then
+    [[ -n "${ROLE}" ]] || { log_error "清空状态必须显式指定 --role；仅可清当前角色有权设置的状态。"; return 1; }
+    check_permission status-clear
+    require_issue_target "${num}" || return 1
+    clear_issue_family "${num}" status
+    return
+  fi
   check_permission status "${status}"
+  require_issue_target "${num}" || return 1
 
   # 排他性保证：同族其他状态标签一律移除（大小写不敏感，含大写变体）
   if ! raw_label_remove_family_ci "${num}" "${status}" ${STATUS_LABELS}; then
@@ -1283,6 +1413,10 @@ cmd_issue_status() {
 # ---------------------------------------------------------------------------
 cmd_issue_retry() {
   local num="$1" action="$2"
+  case "${action}" in
+    incr) check_permission retry-incr; require_issue_target "${num}" || return 1 ;;
+    reset) check_permission retry-read; require_issue_target "${num}" || return 1 ;;
+  esac
 
   # 读当前重试计数 K：扫描该 Issue 标签，命中 riper-retry-<K>（大小写不敏感）取 K，否则 0
   local cur=0 lab lab_lc current
@@ -1304,12 +1438,10 @@ cmd_issue_retry() {
       printf '%s\n' "${cur}"
       ;;
     reset)
-      check_permission retry-read
       raw_label_remove_family_ci "${num}" "" ${RETRY_LABELS} || return 1
       log_info "重试计数已清零（移除全部 riper-retry-* 标签）。"
       ;;
     incr)
-      check_permission retry-incr
       if [[ "${cur}" -ge 3 ]]; then
         log_error "已达重试上限 3 次（当前 riper-retry-${cur}），应转 riper-blocked 等待人工介入，不再自增。"
         exit 1

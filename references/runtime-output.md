@@ -60,7 +60,7 @@ ILOOP_EVENTS_FD=3 ./scripts/git-ops.sh --role developer issue status 42 riper-ex
 | `success` | 受覆盖操作返回成功。**不表示**阶段完成、验收 PASS 或后续步骤已执行 |
 | `denied` | 在任何远端写入前被角色权限拒绝（`ROLE-001`） |
 | `failed` | 受覆盖操作失败；副作用见 `side_effects` |
-| `partial` | 排他清理子步骤已完成，但目标标签写入未确认成功 |
+| `partial` | 排他清理子步骤已完成但目标标签添加失败；或 none 清空已有删除子操作成功、随后删除失败。首次删除即失败不称部分完成，副作用仍可能 unknown |
 
 ### side_effects 语义
 
