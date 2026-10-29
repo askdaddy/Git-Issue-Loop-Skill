@@ -4,6 +4,21 @@ All notable changes to stable `iloop` releases are recorded here. Releases use
 immutable `vX.Y.Z` tags; installation follows the highest stable tag rather
 than `main`.
 
+## [Unreleased]
+
+### Changed
+
+- Skill upgrades now keep only the most recent `iloop.backup-*` after the new
+  installation passes verification. Older backups are pruned only after a
+  successful switch and verification; failed upgrades retain all backups.
+  Pruning is limited to direct `~/.agents/backups/iloop.backup-*` directories
+  and never follows symlinks. (#61)
+
+### Validation
+
+- Backup-location invariants now execute the documented prune snippet against
+  old, current, symlink, file, and non-matching entries; 23 shell suites pass.
+
 ## [0.6.13] - 2026-10-29
 
 ### Added
