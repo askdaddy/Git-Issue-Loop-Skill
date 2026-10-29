@@ -4,6 +4,19 @@ All notable changes to stable `iloop` releases are recorded here. Releases use
 immutable `vX.Y.Z` tags; installation follows the highest stable tag rather
 than `main`.
 
+## [Unreleased]
+
+### Fixed
+
+- GitLab target checks accept both `/-/issues/<iid>` and `/-/work_items/<iid>`
+  URLs, so newer GitLab Work Items issues can be tagged; merge-request URLs
+  remain rejected. (#64)
+
+### Validation
+
+- Added a Work Items URL regression assertion to the target/clear invariants;
+  23 shell suites pass.
+
 ## [0.6.14] - 2026-10-29
 
 ### Changed
