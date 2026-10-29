@@ -40,6 +40,12 @@ mkdir -p "$WORK/ghbin" "$WORK/glabbin" "$WORK/teabin"
 
 cat > "$WORK/ghbin/gh" <<'STUB'
 #!/usr/bin/env bash
+# Known positive Issue metadata for #37; label-read failure modes remain independent.
+if [[ "${1:-} ${2:-}" == "issue view" && " $* " == *" --json number,url "* ]]; then
+  echo "gh $*" >> "${STUB_LOG:-/dev/null}"
+  printf '%s\n' issue
+  exit 0
+fi
 echo "gh $*" >> "${STUB_LOG:-/dev/null}"
 case "$1 $2" in "auth status") exit 0 ;; esac
 if [[ "$1 $2" == "issue view" ]]; then
@@ -63,6 +69,12 @@ chmod +x "$WORK/ghbin/gh"
 
 cat > "$WORK/glabbin/glab" <<'STUB'
 #!/usr/bin/env bash
+# Known positive Issue metadata for #37; label-read failure modes remain independent.
+if [[ "${1:-} ${2:-}" == "issue view" && " $* " == *".web_url"* ]]; then
+  echo "glab $*" >> "${STUB_LOG:-/dev/null}"
+  printf '%s\n' issue
+  exit 0
+fi
 echo "glab $*" >> "${STUB_LOG:-/dev/null}"
 if [[ "$1 $2" == "auth status" ]]; then exit 0; fi
 if [[ "$1 $2" == "issue note" ]]; then
@@ -75,6 +87,12 @@ chmod +x "$WORK/glabbin/glab"
 
 cat > "$WORK/teabin/tea" <<'STUB'
 #!/usr/bin/env bash
+# Known positive Issue metadata for #37; label-read failure modes remain independent.
+if [[ "${1:-}" == issues && " $* " == *" --fields index,kind,url "* ]]; then
+  echo "tea $*" >> "${STUB_LOG:-/dev/null}"
+  printf '%s\tIssue\thttps://gitea.example.com/o/r/issues/%s\n' "$2" "$2"
+  exit 0
+fi
 echo "tea $*" >> "${STUB_LOG:-/dev/null}"
 if [[ "$1 $2" == "login list" ]]; then
   echo "https://gitea.example.com  gitea  someuser  token"; exit 0

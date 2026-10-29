@@ -22,6 +22,12 @@ git -C "$WORK/proj" remote add origin https://gitlab.com/o/r.git
 
 cat > "$WORK/bin/glab" <<'STUB'
 #!/usr/bin/env bash
+# Known positive Issue metadata for #37; label-read failure modes remain independent.
+if [[ "${1:-} ${2:-}" == "issue view" && " $* " == *".web_url"* ]]; then
+  echo "$*" >> "${STUB_LOG:?}"
+  printf '%s\n' issue
+  exit 0
+fi
 # Stub of glab 1.118: records every call, mimics real output/flags.
 echo "$*" >> "${STUB_LOG:?}"
 if [[ "${1:-}" == "auth" ]]; then exit 0; fi
