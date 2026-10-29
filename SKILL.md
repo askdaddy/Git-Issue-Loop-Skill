@@ -109,6 +109,7 @@ description: >-
 ## 0. 核心约定
 
 - **唯一事实来源**：Issue（正文 + 评论 + 标签）为主；本地 `docs/issues/<N>/` 仅为**降级 fallback，不是持久化副本**——远程可用时不得双写。
+- **Issue 来源标记**：经 `git-ops.sh issue create` 创建的 Issue，正文末尾自动追加**可见**来源标记（Skill 仓库 URL、版本、短 SHA、角色、入口、UTC 时间）；无需手工写入。标记是来源说明，不是身份认证；缺失不改变 intake、阶段保护或权限判定。
 - **降级落盘位置**：`docs/issues/<N>/`（intake.md / spec.md / design.md / plan.md / verify-report.md），基于 `templates/` 填充，仅当远程 Issue 不可用时使用；用户显性指定时以用户为准。
 - **测试脚本位置**：QA 的黑盒测试脚本默认落 `test/`；用户显性指定时以用户为准。
 - **平台操作**：Issue / PR / Release 经 `scripts/git-ops.sh` 执行，禁止直接调用 `gh` / `glab` / `tea`。加载角色后的操作必须携带 `--role <当前角色>`；无角色入口仅可执行自检、标签初始化与分发所需只读命令，不为通过权限检查伪造角色。本地 Git 读写与经授权的 tag 操作按对应阶段执行。脚本按 §1.1 权限矩阵与 §1.2 标签体系硬性校验。子命令清单：`issue list|get|comment|create|close|reopen|priority|status|retry|claim|label`、`labels init`、`guard <role> [N]`、`workspace status|start|finish`、`platform`、`doctor`。
@@ -388,7 +389,7 @@ Issue(编号 N)
 4. **歧义消解**：目标模糊到写不出验收意向时，在**对话中**向用户提问（此时 Issue 尚不存在，不走 Issue 评论提问路径），直到可成稿。
 5. **草稿确认**：将标题 + 正文草稿呈给用户过目，确认或按反馈修订后再创建；用户明确表示本次免确认时可直接创建。
 6. **创建并初始化**（依次执行）：
-   - `./scripts/git-ops.sh --role planner issue create "<标题>" "<正文>"` → 取得编号 N；
+   - `ILOOP_PROVENANCE_ENTRY=goal-bootstrap ./scripts/git-ops.sh --role planner issue create "<标题>" "<正文>"` → 取得编号 N（脚本自动追加可见来源标记，含 Skill 仓库 URL、版本、短 SHA、角色、入口与 UTC 时间）；
    - `./scripts/git-ops.sh --role planner issue priority <N> <p0|p1|p2|p3>`；
    - `./scripts/git-ops.sh --role planner issue status <N> riper-research`；
    - `./scripts/git-ops.sh --role planner issue comment <N> "由目标直入 [G] 创建，原始目标：<用户原话>"`。
