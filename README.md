@@ -24,6 +24,10 @@ CLIs: `gh`, `glab`, and `tea`.
   loop. Your reply resumes the same Issue, stage, role, and scope; only an
   explicit `/iloop exit` (or equivalent, such as `退出 iloop`) or a new session
   leaves. Exit keeps the claim and does not change Issue state by itself.
+- Visible provenance on skill-created Issues: `issue create` appends a footer
+  with the Skill repository URL, version, short SHA, role, entry mode, and UTC
+  time. It is a source note, not authentication; a missing footer does not
+  change intake, stage protection, or permissions.
 - Auto-pick on a bare `/iloop`: scans open issues read-only, orders them
   `p0`→`p3` then by ascending number, skips blocked / retry-capped /
   verified-but-open / claimed ones, and reports the candidate list with its reasoning and
@@ -80,7 +84,7 @@ CLIs: `gh`, `glab`, and `tea`.
   [runtime output contract](references/runtime-output.md).
 - QA delivery through a verified pull request, with separate authorization for
   merging and publishing. Local-only delivery keeps the Issue open.
-- 21 shell invariant suites under `test/`, covering CLI behavior through stubs
+- 22 shell invariant suites under `test/`, covering CLI behavior through stubs
   and contract checks. The intake scenario walkthroughs are protocol reviews,
   not independent Agent end-to-end tests.
 

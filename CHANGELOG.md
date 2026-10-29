@@ -4,6 +4,24 @@ All notable changes to stable `iloop` releases are recorded here. Releases use
 immutable `vX.Y.Z` tags; installation follows the highest stable tag rather
 than `main`.
 
+## [Unreleased]
+
+### Added
+
+- Every Issue created through `git-ops.sh issue create` now ends with a visible
+  provenance footer containing the Skill repository URL
+  (https://github.com/askdaddy/Git-Issue-Loop-Skill), installed version, short
+  SHA, role, entry mode, and UTC timestamp. `[G]` marks the entry as
+  `goal-bootstrap`; other roles default to `issue-create`. The footer is a
+  source note, not authentication, and does not change intake or permissions.
+  (#58)
+
+### Validation
+
+- Added a shell invariant suite for the provenance footer, including the repo
+  URL, version/SHA fallback, role/entry, UTC timestamp, original-body
+  preservation, and absence of local paths.
+
 ## [0.6.12] - 2026-10-22
 
 ### Added

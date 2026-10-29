@@ -393,6 +393,9 @@ require_cli() {
 # ---------------------------------------------------------------------------
 ROLE="${GIT_OPS_ROLE:-}"
 
+# Skill 分发仓库（Issue 正文来源标记显式展示，不联网）
+ILOOP_SKILL_REPO_URL="https://github.com/askdaddy/Git-Issue-Loop-Skill"
+
 # 互斥标签族定义（同时只能存在一个）
 # 优先级：艾森豪威尔矩阵 p0=重要且紧急 p1=重要不紧急 p2=紧急不重要 p3=不重要不紧急
 PRIORITY_LABELS="p0 p1 p2 p3"
@@ -1413,10 +1416,32 @@ cmd_issue_claim() {
 }
 
 # ---------------------------------------------------------------------------
+# Issue 正文可见来源标记：含 Skill 仓库 URL、版本、短 SHA、角色、入口与 UTC 时间。
+# 版本以脚本所在 Skill 根为准（与 help / check-update 同算法），不读 manifest version。
+# 标记是来源说明，不是身份认证；缺失不改变 intake、阶段保护或权限判定。
+# ---------------------------------------------------------------------------
+skill_provenance_footer() {
+  local script_dir skill_root version short_sha role entry created
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  skill_root="${ILOOP_SKILL_ROOT:-$(cd "${script_dir}/.." && pwd)}"
+  version="$(git -C "${skill_root}" describe --tags --exact-match HEAD 2>/dev/null || true)"
+  short_sha="$(git -C "${skill_root}" rev-parse --short HEAD 2>/dev/null || true)"
+  [[ -n "${version}" ]] || version="untagged"
+  [[ -n "${short_sha}" ]] || short_sha="unknown"
+  role="${ROLE:-unknown}"
+  entry="${ILOOP_PROVENANCE_ENTRY:-issue-create}"
+  created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '%s\n' '---'
+  printf '> 由 **iloop Skill** 创建 · %s · `%s` (`%s`) · 角色 `%s` · 入口 `%s` · %s\n' \
+    "${ILOOP_SKILL_REPO_URL}" "${version}" "${short_sha}" "${role}" "${entry}" "${created}"
+}
+
+# ---------------------------------------------------------------------------
 # 创建 Issue：gh/glab 均支持 create；tea 优先 issue create，失败时回退 issues create
 # ---------------------------------------------------------------------------
 cmd_issue_create() {
   local title="$1" body="$2"
+  body="${body}"$'\n\n'"$(skill_provenance_footer)"
   # 平台检测失败时必须显式报错退出（命令替换的失败会被 case 吞掉）
   local __plat
   __plat="$(detect_platform)" || exit 1
