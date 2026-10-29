@@ -5,6 +5,16 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 python3 - "$ROOT" <<'PY'
 import os,sys,tempfile,pathlib,subprocess,json
 root=pathlib.Path(sys.argv[1]); ops=root/'scripts/git-ops.sh'
+script_text=ops.read_text()
+target_fn=script_text.index('require_issue_target()')
+glab_start=script_text.index('    glab)', target_fn)
+glab_end=script_text.index('    tea)', glab_start)
+glab_block=script_text[glab_start:glab_end]
+glab_code='\n'.join(line for line in glab_block.splitlines() if not line.lstrip().startswith('#'))
+assert '/-/issues/' in glab_code, 'glab target matcher must keep Issues URLs'
+assert '/-/work_items/' in glab_code, 'glab target matcher must accept Work Items URLs'
+assert '/-/merge_requests/' in glab_code, 'glab target matcher must still detect MR URLs'
+print('PASS glab target matcher covers Issues + Work Items + Merge Requests URLs')
 with tempfile.TemporaryDirectory() as td:
  w=pathlib.Path(td); bins=w/'bin';bins.mkdir()
  stub=r'''#!/usr/bin/env python3

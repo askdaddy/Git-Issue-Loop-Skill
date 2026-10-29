@@ -899,8 +899,10 @@ require_issue_target() {
       fi
       ;;
     glab)
+      # 新版 GitLab 把 Issue 暴露为 Work Items，web_url 可能是 /-/work_items/<iid>；
+      # 旧版仍是 /-/issues/<iid>，两者都视为 Issue；MR 仍走 /-/merge_requests/<iid>。
       kind="$(glab issue view "${num}" --output json --jq \
-        "if .iid == ${num} and (.web_url | endswith(\"/-/issues/${num}\")) then \"issue\" elif .iid == ${num} and (.web_url | endswith(\"/-/merge_requests/${num}\")) then \"pull-request\" else \"unknown\" end" 2>/dev/null)" || kind=unknown
+        "if .iid == ${num} and ((.web_url | endswith(\"/-/issues/${num}\")) or (.web_url | endswith(\"/-/issues/${num}/\")) or (.web_url | endswith(\"/-/work_items/${num}\")) or (.web_url | endswith(\"/-/work_items/${num}/\"))) then \"issue\" elif .iid == ${num} and ((.web_url | endswith(\"/-/merge_requests/${num}\")) or (.web_url | endswith(\"/-/merge_requests/${num}/\"))) then \"pull-request\" else \"unknown\" end" 2>/dev/null)" || kind=unknown
       ;;
     tea)
       # 只请求固定字段，拒绝旧版本忽略格式、额外行、错编号或未知 kind。
