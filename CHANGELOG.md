@@ -4,7 +4,7 @@ All notable changes to stable `iloop` releases are recorded here. Releases use
 immutable `vX.Y.Z` tags; installation follows the highest stable tag rather
 than `main`.
 
-## [Unreleased]
+## [0.6.15] - 2026-10-29
 
 ### Fixed
 
