@@ -42,9 +42,10 @@
     "backupDir": "~/.agents/backups",
     "backupPrefix": "iloop.backup-",
     "conflictPolicy": "fail-on-foreign-or-dirty-install",
-    "updatePolicy": "stage-validate-follow-staging-backup-switch",
+    "updatePolicy": "stage-validate-follow-staging-backup-switch-verify-prune",
     "installedTagDetection": "git-describe-exact-match-then-head-sha",
-    "backupRetention": "keep-all-until-user-deletes",
+    "backupRetention": "keep-latest-one",
+    "backupRetentionCount": 1,
     "postInstall": {
       "frontmatterName": "iloop",
       "executablePaths": [

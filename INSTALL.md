@@ -22,14 +22,16 @@ Agent 收到上述请求后，必须按此协议执行；不得将“最新版�
 5. 若 `~/.agents/skills/iloop` 不存在，将 staging 目录 `mv` 为目标目录。若已存在，先检查其 `remote.origin.url` 是否等于清单中的仓库 URL、工作区是否干净：
    - 同源且干净：将旧目录重命名为 `~/.agents/backups/iloop.backup-<时间戳>`，再将 staging `mv` 为目标目录。
    - 非同源或有本地修改：停止，不覆盖、不删除，并报告原因和目录路径。
-   备份必须在 `~/.agents/skills/` **之外**。不得把长期备份放到 `/tmp` 或 `$TMPDIR`（系统会清理临时目录，与 `backupRetention: keep-all-until-user-deletes` 冲突）。隐藏前缀（`.iloop.backup-*`）不足以避免重复 `/iloop`：部分 Agent 仍会扫描点目录。
-6. 最后报告：目标目录、解析到的 tag、commit SHA、备份路径（若有），以及验证结果。报告完成后必须提醒用户刷新 Agent 宿主会话。仅当目标项目实际运行 `/iloop` 时，才在那个项目仓库根目录执行 `./scripts/git-ops.sh doctor`。
+   备份必须在 `~/.agents/skills/` **之外**。不得把长期备份放到 `/tmp` 或 `$TMPDIR`（系统会清理临时目录，与 `backupRetention: keep-latest-one` 冲突）。隐藏前缀（`.iloop.backup-*`）不足以避免重复 `/iloop`：部分 Agent 仍会扫描点目录。
+6. **验证新安装**：确认目标目录的 `git describe --tags --exact-match` 等于解析到的 tag（失败则 `git rev-parse HEAD` 等于目标 SHA）、工作区干净、`skill-manifest.json` 的 `requiredPaths` 均存在、`SKILL.md` frontmatter `name` 为 `iloop`、`scripts/git-ops.sh` 可执行，并运行 `scripts/check-update.sh` 确认 `status=current`。任一步失败：保留全部备份，停止，不执行清理。
+7. **清理旧备份**：仅在步骤 6 全部通过时，按下方“备份保留”只保留本次升级创建的 `iloop.backup-*`，删除更早的备份。清理失败如实报告，不回滚新安装。
+8. **最后报告**：目标目录、解析到的 tag、commit SHA、保留的备份路径、清理结果（removed/failed）以及验证结果。报告完成后必须提醒用户刷新 Agent 宿主会话。仅当目标项目实际运行 `/iloop` 时，才在那个项目仓库根目录执行 `./scripts/git-ops.sh doctor`。
 
-建议先完成 staging 校验再切换目录；任一步失败都保留现有的有效安装。安装协议不使用 `git reset --hard`、`git clean` 或对既有目录的递归删除。
+建议先完成 staging 校验再切换目录；任一步失败都保留现有的有效安装。除步骤 7 按 `backupRetention` 清理旧备份外，安装协议不使用 `git reset --hard`、`git clean` 或对既有目录的递归删除；清理只允许删除 `~/.agents/backups/` 下匹配 `iloop.backup-*` 的旧目录，绝不删除当前备份或 live 安装。
 
 ## 更新与回滚
 
-更新使用相同的一句话请求。Agent 重新解析最新稳定 tag。已安装版本判定仅用于是否需要更新，不得当作 `backupPrefix` 来源：在 live 目录 `~/.agents/skills/iloop` 执行 `git describe --tags --exact-match`；若失败，则比较该目录 `git rev-parse HEAD` 与远端目标 tag 的 commit SHA。两者都失败则停止并报告，不得假设需要或不需要更新。禁止把 `skill-manifest.json` 的 `skill.version` 当作已安装 tag。只有在判定出的已安装 tag（或 SHA）与目标 tag 不同时才执行 staging → 验证 → 备份 → 切换。
+更新使用相同的一句话请求。Agent 重新解析最新稳定 tag。已安装版本判定仅用于是否需要更新，不得当作 `backupPrefix` 来源：在 live 目录 `~/.agents/skills/iloop` 执行 `git describe --tags --exact-match`；若失败，则比较该目录 `git rev-parse HEAD` 与远端目标 tag 的 commit SHA。两者都失败则停止并报告，不得假设需要或不需要更新。禁止把 `skill-manifest.json` 的 `skill.version` 当作已安装 tag。只有在判定出的已安装 tag（或 SHA）与目标 tag 不同时才执行 staging → 验证 → 备份 → 切换 → 验证新安装 → 清理旧备份。
 
 在备份 → 切换完成前（以及每次合规更新时），必须把仍留在 `~/.agents/skills/` 下的旧备份与残留 staging **迁出该目录**（含隐藏前缀）。仅改名；不删除；不修改备份内部文件。若目标路径已存在，停止并报告该路径，不覆盖、不删除。
 
@@ -65,7 +67,50 @@ for d in "$SKILLS"/iloop.staging-* "$SKILLS"/.iloop.staging-*; do
 done
 ```
 
-回滚时，Agent 必须列出 `~/.agents/backups/iloop.backup-*`；若 `~/.agents/skills/` 下仍存在 `iloop.backup-*` 或 `.iloop.backup-*`，也一并列出，供用户选择。备份默认全部保留。未经用户明确指定，不能删除备份，也不能自动回滚。
+回滚时，Agent 必须列出 `~/.agents/backups/iloop.backup-*`；若 `~/.agents/skills/` 下仍存在 `iloop.backup-*` 或 `.iloop.backup-*`，也一并列出，供用户选择。默认只保留最近一份备份（`backupRetention: keep-latest-one`）：升级成功且新安装验证通过后，清理更早的 `iloop.backup-*`；验证未通过或用户明确要求保留全部时不得清理；不得删除当前备份。未经用户明确指定，不能自动回滚。
+
+## 备份保留（默认只保留最近一份）
+
+升级成功、切换到新安装并完成步骤 6 的验证后，只保留本次升级创建的 `iloop.backup-*`，删除更早的备份。以下任一情况不得清理：切换失败、新安装验证失败、用户明确要求保留全部备份。
+
+清理只作用于 `~/.agents/backups/` 的直接子目录，名称必须匹配 `iloop.backup-*`；不跟随符号链接，不删除文件、非匹配目录或当前备份。删除失败要如实报告，不伪报完成。
+
+<!-- backup-prune:start -->
+```bash
+BACKUP_DIR="${ILOOP_BACKUP_DIR:-${HOME}/.agents/backups}"
+KEEP="${ILOOP_BACKUP_KEEP:?set ILOOP_BACKUP_KEEP to the backup created by this upgrade}"
+BACKUP_DIR="${BACKUP_DIR%/}"
+KEEP="${KEEP%/}"
+case "$KEEP" in
+  "$BACKUP_DIR"/iloop.backup-*) ;;
+  *) echo "ABORT: ILOOP_BACKUP_KEEP is not an iloop.backup-* path in $BACKUP_DIR"; exit 1 ;;
+esac
+[ -d "$KEEP" ] && [ ! -L "$KEEP" ] || { echo "ABORT: current backup is missing or not a plain directory: $KEEP"; exit 1; }
+removed=0
+failed=0
+for d in "$BACKUP_DIR"/iloop.backup-*; do
+  [ -e "$d" ] || continue
+  [ "$d" = "$KEEP" ] && continue
+  if [ -L "$d" ] || [ ! -d "$d" ]; then
+    echo "SKIP: not a plain directory: $d"
+    continue
+  fi
+  case "$d" in
+    "$BACKUP_DIR"/iloop.backup-*) ;;
+    *) echo "SKIP: outside backup dir: $d"; continue ;;
+  esac
+  if rm -rf -- "$d"; then
+    removed=$((removed + 1))
+  else
+    echo "WARN: failed to remove $d"
+    failed=$((failed + 1))
+  fi
+done
+echo "backup_prune_removed=$removed failed=$failed"
+```
+<!-- backup-prune:end -->
+
+使用方式：把 `ILOOP_BACKUP_KEEP` 设为本次升级创建的备份绝对路径后运行该段；`ILOOP_BACKUP_DIR` 仅供测试覆盖，正常安装不要设置。
 
 ## 启动时的版本检查
 

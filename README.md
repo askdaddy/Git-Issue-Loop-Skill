@@ -150,7 +150,8 @@ previous install to `~/.agents/backups/iloop.backup-<timestamp>` (outside
 hosts still scan dot directories and register a second `/iloop`). Staging
 clones to `${TMPDIR:-/tmp}/iloop.staging-<id>`. Same-origin updates clone
 staging first, then follow that staging `INSTALL.md` / `skill-manifest.json`
-for backup and switch.
+for backup, switch, verification, and keeping only the most recent
+`iloop.backup-*` after the new install passes verification.
 
 > A stable `vX.Y.Z` tag must be published before latest-release installation is
 > available. A compliant Agent fails closed when no stable tag exists; it must
