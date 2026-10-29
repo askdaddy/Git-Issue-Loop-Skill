@@ -4,7 +4,7 @@ All notable changes to stable `iloop` releases are recorded here. Releases use
 immutable `vX.Y.Z` tags; installation follows the highest stable tag rather
 than `main`.
 
-## [Unreleased]
+## [0.6.13] - 2026-10-29
 
 ### Added
 
@@ -16,11 +16,22 @@ than `main`.
   source note, not authentication, and does not change intake or permissions.
   (#58)
 
+### Fixed
+
+- Issue-label writes now verify that the target is an Issue before touching
+  labels, rejecting PR/MR numbers on GitHub, GitLab, and Gitea/Forgejo.
+  `issue priority` and `issue status` gained an explicit `none` clear path with
+  role-scoped validation and readback; retry increments and resets use the same
+  target check. Partial repairs report the first clear failure without claiming
+  completion, and emitted events stay within the existing schema. (#37)
+
 ### Validation
 
 - Added a shell invariant suite for the provenance footer, including the repo
   URL, version/SHA fallback, role/entry, UTC timestamp, original-body
   preservation, and absence of local paths.
+- Added target-validation and scoped-family repair coverage; the documented
+  suite inventory is now checked dynamically. All 23 shell suites pass. (#37)
 
 ## [0.6.12] - 2026-10-22
 
