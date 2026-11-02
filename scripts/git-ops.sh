@@ -112,8 +112,9 @@ Commands:
   git-ops.sh workspace status                       报告工作区隔离状态（主/linked、分支、归属 Issue、worktree 清单）
   git-ops.sh workspace start <num> [--base <ref>]   为 Issue <num> 建立隔离工作区（仓库外 worktree + riper/<num> 分支，基于上游）
   git-ops.sh workspace finish <num>                 清理 Issue <num> 的本地工作区（仅干净且已合并进上游时；不含推送/合并）
-  git-ops.sh integration push|pr-list|pr-view <N>     QA 集成原语（pr-view 参数为 PR 编号）
-  git-ops.sh integration pr-create <N> <title> <body-file>
+  git-ops.sh integration push|pr-view <N>              QA 集成原语（pr-view 参数为 PR 编号）
+  git-ops.sh integration pr-list <N> [--base <branch>]  查同 base/head 的 PR；base 默认仓库默认分支
+  git-ops.sh integration pr-create <N> <title> <body-file> [--base <branch>]  创建 PR；base 默认仓库默认分支
   git-ops.sh integration local <N> <target-branch>    开发显式本地降级；仅 linked worktree，保持 open
   git-ops.sh integration release-view <vX.Y.Z>
   git-ops.sh integration release-create <vX.Y.Z> <SHA>  QA GitHub Release；需独立发布授权与全套件通过

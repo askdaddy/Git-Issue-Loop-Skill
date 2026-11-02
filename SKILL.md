@@ -452,7 +452,7 @@ Issue(编号 N)
 
 ### 3.7 状态判定（Loop Control）
 
-集成原语：`git-ops.sh --role reviewer integration push|pr-list|pr-view|pr-create|release-view|release-create`；本地降级仅 developer 的 `integration local`。参数和矩阵见 [集成与发布](references/integration.md)。发布需独立授权且 tag + GitHub Release 两部分完成，不能随 Issue 自动发布。
+集成原语：`git-ops.sh --role reviewer integration push|pr-list|pr-view|pr-create|release-view|release-create`；`pr-list` / `pr-create` 可带 `--base <branch>` 指定非默认集成分支（省略用默认分支；base 必须在 `origin` 上存在且不等于源分支）。本地降级仅 developer 的 `integration local`。参数和矩阵见 [集成与发布](references/integration.md)。发布需独立授权且 tag + GitHub Release 两部分完成，不能随 Issue 自动发布。
 
 - **全部 PASS**：
   1. `./scripts/git-ops.sh --role reviewer issue status <N> riper-verified`；

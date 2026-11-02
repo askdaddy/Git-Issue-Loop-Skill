@@ -4,6 +4,20 @@ All notable changes to stable `iloop` releases are recorded here. Releases use
 immutable `vX.Y.Z` tags; installation follows the highest stable tag rather
 than `main`.
 
+## [Unreleased]
+
+### Added
+
+- `integration pr-list` and `integration pr-create` accept `--base <branch>`
+  for repositories whose integration branch is not the remote default. The
+  base must exist on `origin`, pass ref-format validation, and differ from the
+  source branch; omission keeps the default-branch behavior. (#67)
+
+### Validation
+
+- Integration fixtures cover gh/glab/tea with a non-default base and reject
+  missing, malformed, and source-equal bases.
+
 ## [0.6.15] - 2026-10-29
 
 ### Fixed

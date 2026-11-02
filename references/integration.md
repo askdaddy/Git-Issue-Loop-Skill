@@ -10,11 +10,13 @@
 `riper-verified` 表示验收通过，不表示已合并；关闭表示已交付 PR 或有已进入上游的证据，不必等待人工合并 PR。
 已有 verified 但尚未交付的 open Issue，报告待集成，不直接关闭；自动挑选仍跳过这种异常态，用户可显式要求集成。
 
-1. 在 `riper/N` 干净工作区检查验收对应 HEAD 未变；检查目标仓库 remote、默认分支、未混入别的 Issue 提交。
+1. 在 `riper/N` 干净工作区检查验收对应 HEAD 未变；检查目标仓库 remote、默认分支或显式 `--base` 目标分支、未混入别的 Issue 提交。
 2. `./scripts/git-ops.sh --role reviewer integration push N`，只向 origin 的同名分支推送，无 force。
-3. `integration pr-list N` 查同 base/head 的 open/closed PR（tea 需人工核对 head/base）。输出最多 100 条；若达到上限或无法完整确认，停止报告去重未完成，不能直接 create。已有 PR 用 `integration pr-view PR编号` 回读；同名已关闭未合并需交回用户，不能盲目重建。用户可在官方 CLI 的人工流程完成分页，Agent 不绕过包装器。
-4. 无重复时用 `integration pr-create N "标题" 正文文件`（gh/glab/tea）。正文描述问题、行为及验证，引用 Issue，避免 `Closes/Fixes/Resolves #N`，由 QA 独立关闭。
+3. `integration pr-list N [--base <branch>]` 查同 base/head 的 open/closed PR（tea 需人工核对 head/base）。输出最多 100 条；若达到上限或无法完整确认，停止报告去重未完成，不能直接 create。已有 PR 用 `integration pr-view PR编号` 回读；同名已关闭未合并需交回用户，不能盲目重建。用户可在官方 CLI 的人工流程完成分页，Agent 不绕过包装器。
+4. 无重复时用 `integration pr-create N "标题" 正文文件 [--base <branch>]`（gh/glab/tea）。正文描述问题、行为及验证，引用 Issue，避免 `Closes/Fixes/Resolves #N`，由 QA 独立关闭。
 5. 回读 PR URL、base/head、提交 SHA 和状态；若输出不充分或平台不可用停止，不假定创建失败或成功。若创建成功但写回失败，保留 PR URL 并先查询再恢复，避免重复。将证据评论回 Issue，随后 QA 关闭并释放认领。
+
+`--base <branch>` 用于集成分支不是远端默认分支的仓库（例如长期 `2026` 分支）。省略时保持默认分支行为。脚本要求 base 在 `origin` 上存在、通过 `git check-ref-format` 校验且不等于源分支 `riper/N`；读取失败或无法确认时 fail closed，不静默回退默认分支。`pr-list` 与 `pr-create` 必须使用同一个 `--base`；`workspace start N --base <ref>` 可让工作区与目标 base 对齐。传入 `origin/<branch>` 时按 `<branch>` 处理。
 
 PR 原语只负责单次平台操作；跨步骤去重、分页、SHA 回读、验收证据与关闭是 Agent 必须执行的协议，不宣称脚本自动认证了这些证据。PR 创建前脚本检查远端 head 等于本地已验收 HEAD；QA 必须核对该 HEAD 与报告一致，标签不是加密证明。
 默认**不自动合并**。不因为授权 /iloop 就得到合并或发布授权；没有 merge PR 子命令。
