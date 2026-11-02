@@ -9,10 +9,19 @@ cat > "$W/bin/git" <<'STUB'
 #!/usr/bin/env bash
 case "$1" in
  ls-remote)
+  printf 'git %s\n' "$*" >> "$CALLS"
   [[ "${REMOTE_FAIL:-0}" == 0 ]] || exit 1
   case "$*" in
    *refs/tags*) [[ "${MISSING_TAG:-0}" == 0 ]] || exit 2; printf '%s\trefs/tags/v9.9.9\n' "${TAG_SHA:-$SHA}"; [[ "${ANNOTATED:-0}" == 0 ]] || printf '%s\trefs/tags/v9.9.9^{}\n' "$SHA" ;;
-   *refs/heads*) printf '%s\trefs/heads/main\n' "${REMOTE_SHA:-$SHA}" ;;
+   *refs/heads*)
+     ref=""
+     for a in "$@"; do case "$a" in refs/heads/*) ref="$a" ;; esac; done
+     [[ -n "$ref" ]] || ref=refs/heads/main
+     case "$ref" in
+       refs/heads/main|refs/heads/2026|refs/heads/riper/25) printf '%s\t%s\n' "${REMOTE_SHA:-$SHA}" "$ref" ;;
+       *) exit 2 ;;
+     esac
+     ;;
   esac; exit 0 ;;
  push) printf 'git %s\n' "$*" >> "$CALLS"; exit 0 ;;
  fetch) [[ "${FETCH_FAIL:-0}" == 0 ]] || exit 1; exit 0 ;;
@@ -70,6 +79,24 @@ done
 for expected in 'gh pr create --head riper/25 --base main' 'glab mr create --source-branch riper/25 --target-branch main' 'tea pulls create --head riper/25 --base main'; do [[ "$(cat "$CALLS")" == *"$expected"* ]]; done
 [[ "$(cat "$CALLS")" == *'gh pr view 7 --json url,state,baseRefName,headRefName,headRefOid'* ]]
 echo 'PASS explicit branch push and three-platform PR routing; GitHub delivery metadata requested'
+echo '=== non-default base ==='
+for host in github.com gitlab.com codeberg.org; do
+ git remote set-url origin "https://$host/owner/repo.git"
+ bash "$G" --role reviewer integration pr-list 25 --base 2026 > /dev/null
+ bash "$G" --role reviewer integration pr-create 25 'Title' "$W/body" --base 2026 > /dev/null
+done
+for expected in 'gh pr create --head riper/25 --base 2026' 'glab mr create --source-branch riper/25 --target-branch 2026' 'tea pulls create --head riper/25 --base 2026'; do [[ "$(cat "$CALLS")" == *"$expected"* ]]; done
+for expected in 'gh pr list --state all --head riper/25 --base 2026' 'glab mr list --all --source-branch riper/25 --target-branch 2026'; do [[ "$(cat "$CALLS")" == *"$expected"* ]]; done
+[[ "$(cat "$CALLS")" == *'git ls-remote --exit-code origin refs/heads/2026'* ]]
+git remote set-url origin https://github.com/owner/repo.git
+bash "$G" --role reviewer integration pr-create 25 'Title' "$W/body" --base origin/2026 > /dev/null
+[[ "$(tail -1 "$CALLS")" == *'--base 2026'* ]]
+echo 'PASS non-default base across gh/glab/tea and origin/ prefix normalization'
+for bad in missing bad..name riper/25; do
+ if bash "$G" --role reviewer integration pr-create 25 'Title' "$W/body" --base "$bad" > /dev/null 2>&1; then exit 1; fi
+done
+if bash "$G" --role reviewer integration pr-list 25 --base missing > /dev/null 2>&1; then exit 1; fi
+echo 'PASS missing/malformed/source base fail closed'
 git remote set-url origin https://github.com/owner/repo.git
 before="$(wc -l < "$CALLS")"
 if REMOTE_SHA=bad bash "$G" --role reviewer integration pr-create 25 Title "$W/body" > /dev/null 2>&1; then exit 1; fi

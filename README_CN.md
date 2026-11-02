@@ -29,7 +29,7 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
 - 面向并行会话的按 Issue 工作区隔离：只有分支不等于隔离——共用一个克隆的会话共享同一个 HEAD 与 index 锁。因此 `workspace start <N>` 会在**仓库外** `../.iloop-worktrees/<repo>/<N>` 建一个真正的 `git worktree`，挂上 `riper/<N>` 分支，基分支恒为 `origin/<默认分支>` 而**不是本地分支**，所以不会继承别的会话尚未推送的提交。`workspace status` 只读报告你在哪个工作树、哪条分支、归属哪个 Issue；`workspace finish <N>` 仅在工作区干净且已合并进上游时才清理，否则拒绝而不是丢弃任何一方；`guard <role> <N>` 会额外校验当前分支是否就是 `riper/<N>`。
 - 运行时反馈：角色操作被拒绝、工作区越界或 Issue 阶段证据缺失时，先纠偏任务，再生成脱敏离线草稿；向维护上游提交须明确授权。
 - 可选的结构化运行输出：`issue priority`、`issue status`、`issue comment`、`guard` 可在调用者预先打开的 fd3 上输出一条 NDJSON 事件（`ILOOP_EVENTS_FD=3`）；并提供区分「脚本观察事实 / Agent 声明 / 未验证」的阶段摘要模板（`templates/run-summary.md`）。默认关闭：不写本地事件日志、不联网，不改变 stdout、stderr 与退出码。契约见[运行时输出](references/runtime-output.md)。
-- QA 通过核验后的 PR 交付，合并与发布另需授权；仅本地交付时 Issue 保持 open。
+- QA 通过核验后的 PR 交付，合并与发布另需授权；PR base 默认仓库默认分支，可用 `--base <branch>` 指定非默认集成分支。仅本地交付时 Issue 保持 open。
 - `test/` 下 23 组 shell 不变量测试，覆盖 stub CLI 行为与契约检查；第三方接入场景走查属于协议审阅，不等同于独立 Agent 端到端测试。
 
 ## 第三方 Issue 接入

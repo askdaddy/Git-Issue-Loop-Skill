@@ -27,7 +27,7 @@ cmd_integration() {
     local:developer|push:reviewer|pr-list:reviewer|pr-view:reviewer|pr-create:reviewer|release-view:reviewer|release-create:reviewer) ;;
     *) integration_fail '集成动作需要显式角色：local=developer，其余=reviewer。'; return 1 ;;
   esac
-  local num branch db plat sha remote_sha tag notes
+  local num branch db plat sha remote_sha tag notes base
   case "$action" in
     push)
       [[ $# -eq 1 ]] && valid_issue_num "$1" || usage
@@ -50,17 +50,34 @@ cmd_integration() {
       log_info '仅本地合并；Issue 保持 open，不满足上游交付或清理条件。'
       ;;
     pr-list|pr-view|pr-create)
+      base=""
       case "$action" in
-        pr-list) [[ $# -eq 1 ]] && valid_issue_num "$1" || usage ;;
+        pr-list)
+          if [[ $# -eq 3 && "$2" == "--base" && -n "$3" ]]; then base="$3"; set -- "$1"; fi
+          [[ $# -eq 1 ]] && valid_issue_num "$1" || usage
+          ;;
         pr-view) [[ $# -eq 1 ]] && valid_issue_num "$1" || usage ;;
-        pr-create) [[ $# -eq 3 ]] && valid_issue_num "$1" && [[ -n "$2" && -f "$3" ]] || usage ;;
+        pr-create)
+          if [[ $# -eq 5 && "$4" == "--base" && -n "$5" ]]; then base="$5"; set -- "$1" "$2" "$3"; fi
+          [[ $# -eq 3 ]] && valid_issue_num "$1" && [[ -n "$2" && -f "$3" ]] || usage
+          ;;
       esac
       plat="$(detect_platform)" || return 1; require_cli "$plat"
       if [[ "$action" == pr-view ]]; then
         case "$plat" in gh) gh pr view "$1" --json url,state,baseRefName,headRefName,headRefOid ;; glab) glab mr view "$1" ;; tea) tea_cmd pulls "$1" ;; esac
         return
       fi
-      num="$1"; branch="riper/$num"; db="$(default_branch)" || return 1
+      num="$1"; branch="riper/$num"
+      if [[ -n "$base" ]]; then
+        base="${base#origin/}"
+        [[ "$base" != "$branch" ]] || { integration_fail "PR base 不能等于源分支 ${branch}。"; return 1; }
+        git check-ref-format --branch "$base" >/dev/null 2>&1 || { integration_fail "非法 base 分支：${base}"; return 1; }
+        remote_sha="$(git ls-remote --exit-code origin "refs/heads/${base}" 2>/dev/null)" || { integration_fail "base 分支 '${base}' 不在 origin 上，或远端不可达。"; return 1; }
+        [[ "${remote_sha%%[[:space:]]*}" =~ ^[0-9a-f]{40}$ && "${remote_sha##*$'\t'}" == "refs/heads/${base}" ]] || { integration_fail "无法确认 origin 上的 base 分支：${base}"; return 1; }
+      else
+        base="$(default_branch)" || return 1
+      fi
+      db="$base"
       if [[ "$action" == pr-list ]]; then
         # Human checks all pages and matches base/head; no JSON-parser dependency.
         case "$plat" in
