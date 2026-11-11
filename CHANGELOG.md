@@ -4,6 +4,19 @@ All notable changes to stable `iloop` releases are recorded here. Releases use
 immutable `vX.Y.Z` tags; installation follows the highest stable tag rather
 than `main`.
 
+## [Unreleased]
+
+### Added
+
+- Global correction-only feedback queue (#70): `feedback.sh add|list|show|dismiss|reported`
+  persists skill problems to `~/.agents/iloop-feedback/entries/` — outside the upgrade-replaced
+  skill root, shared across sessions and projects (`ILOOP_FEEDBACK_DIR` overrides). Entries
+  accumulate silently, agents ask once at loop end / buffer suspend / exit only when the pending
+  queue is non-empty, and reporting reuses the authorized maintenance-work-copy protocol with
+  per-entry user review plus `reported` backfill; dismissed entries are never re-asked. Feature
+  requests stay out (category enum is protocol-level rejection). All queue subcommands remain
+  offline with allowlist fields only.
+
 ## [0.6.16] - 2026-10-29
 
 ### Added

@@ -36,14 +36,29 @@
 
 默认白名单只有固定规则/症状、枚举分类、UTC 参考 ID、Skill tag/SHA；其他业务信息由用户审阅后补充。
 禁止自动粘贴原始命令参数、日志、环境变量、token、绝对路径、私有 URL、源码或完整对话。正则不能保证自由文本安全。
-不建本地事件日志或阶段文档副本，Issue 为持久事实源；远程不可用沿用 fallback。缺 CLI 或授权必须停止并交给用户安装/登录指南。
+不建本地事件日志或阶段文档副本，Issue 为持久事实源；远程不可用沿用 fallback。全局反馈队列（见下节）是用户授权沉淀的用户数据，只能由 Agent/用户显式动作创建，不属于被禁止的自动事件日志。缺 CLI 或授权必须停止并交给用户安装/登录指南。
+
+## 全局问题沉淀队列（仅纠错）
+
+`feedback.sh` 的本地队列子命令把 iloop 自身的纠错类问题沉淀为跨会话用户数据，不做任何自动抓取。
+
+- **位置**：`~/.agents/iloop-feedback/entries/<ID>.md`，每条目一文件（人类可读键值行，可手工修复）；`ILOOP_FEEDBACK_DIR` 可覆盖。skill 根升级整体替换（stage→backup→switch）不触碰该目录，跨会话、跨项目共享。
+- **分类枚举即协议层拒绝功能建议**：`bug`（脚本/协议行为错误）、`protocol`（协议偏差，含 ROLE-001/WORKSPACE-001/ISSUE-001，已知规则码前缀进摘要）、`doc`（文档错误或误导）、`behavior`（错误的使用体验行为）。"希望改进"而非"行为错误"的不沉淀。
+- **子命令（全部离线：不联网、不调平台 CLI）**：
+  - `add <分类> "<单行摘要>" ["<单行细节>"]`：沉淀一条，输出 ID（schema 2 字段：id/created/skill-tag/skill-sha/category/rule/summary/detail/status/reported-url/reported-at/…，分析类字段默认 unknown）；
+  - `list [pending|all]`：队列一行摘要（默认 pending；目录缺失输出 `0`）；
+  - `show <ID>`：单条全文，供呈报审阅；
+  - `dismiss <ID>`：用户拒绝上报（终态，永不再自动询问）；
+  - `reported <ID> <https-url>`：上报后回填 URL 与 UTC 时间（终态，ID↔issue URL 双向可追溯）。
+- **状态机单向** `pending → reported | dismissed`；终态复活只能手工编辑条目文件。同一问题复发：新增条目，去重环节与旧条目/上游 issue 关联，不静默丢弃。
+- **失败降级**：队列目录不可写时 `add` 显式报错并给修复指引；反馈失败不覆盖业务闭环的原始错误与退出码。
 
 维护上游固定为 `https://github.com/askdaddy/Git-Issue-Loop-Skill.git`。
 1. 在单独维护工作副本核验 `git remote get-url origin` 与该 URL 相同；脚本按 cwd remote 路由，禁止在业务仓库误开维护票。无可用维护副本时停止上游步骤，不改业务 remote。
 2. 经该副本 `scripts/git-ops.sh --role <角色> issue list --state all`，按指纹核对 open 和 closed 候选，再 `issue get <N>` 阅读证据。查询不携带私有业务内容，无法完整读取时报告去重未完成，不宣称无重复。
 3. 呈报确切上游、create 或 comment、完整脱敏标题/正文、候选与去重结论，等待用户授权这次写入。业务 Issue 授权不包含向维护上游披露信息。既有持续授权须能覆盖目标、内容与动作；不自动推定。
 4. 获授权后仅经该副本包装器 `issue create` 或 `issue comment` 写入。同根因追加实例并关联原反馈；已修复后复发保留新实例、原版本及修复版本，不静默去重丢弃。新建立即由 PM 设置 p0～p3；遵守原角色权限，跨角色任务先切换。
-5. 回读确认；部分失败报告已完成动作和未完成动作，避免盲目重试造成重复。反馈未提交必须明确说明，不标成功。
+5. 回读确认，并以上游 issue URL 执行 `feedback.sh reported <ID> <issue-url>` 回填队列条目；部分失败报告已完成动作和未完成动作，避免盲目重试造成重复。反馈未提交必须明确说明，不标成功。
 
 ## 维护与正向验证
 
