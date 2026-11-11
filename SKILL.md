@@ -77,6 +77,7 @@ description: >-
 - `等待` 必须具体到用户能直接回答的事项，禁止只写"等待用户"。
 - 挂起不是终态：不关闭 Issue、不设 `riper-blocked`（除非确有阻塞）、不释放认领；也不得自行假设用户答复继续。
 - 恢复后的第一条消息输出 `[iloop-buffer] … 恢复:<§3.x 步骤>`（可省略 `等待:`），说明下一步后继续；同一挂起点不必每轮重复状态头。
+- 挂起时若全局反馈待上报队列非空（`bash <Skill根>/scripts/feedback.sh list`），在同一消息内附带询问一次是否按 §3.8 上报；空队列零打扰，不为询问单独挂起。
 - 需要写回阶段摘要时，按 [运行时输出契约](references/runtime-output.md) 的 `pause` / `resume` 节点处理并关联前序 `run_id`；buffer 状态头不能替代该摘要。
 
 **退出协议（仅显性退出触发）**：
@@ -86,8 +87,9 @@ description: >-
 3. 认领默认保留（退出 buffer ≠ 放弃 Issue）；摘要中给出 `./scripts/git-ops.sh issue claim <N> release`，仅当用户明示"退出并释放 / 放弃"时才执行释放。
 4. 挂起在 [G] 草稿或自动挑选确认时，退出即丢弃未创建的草稿或候选，不留下 Issue。
 5. 退出后 Issue 标签仍是跨会话的事实来源；新会话需重新 `/iloop <N>` 或自然语言触发。
+6. 退出前若全局反馈待上报队列非空（`feedback.sh list`），在交接摘要之后询问一次是否按 §3.8 上报（拒绝=`dismiss`，"以后再说"=保持 pending；空队列零打扰）。
 
-**边界**：buffer 只决定"本轮输入如何解释"，不改 §3.0.1 状态分发、T0 铁律、权限矩阵，也不替代 Issue 的唯一事实来源地位。远端证据与 buffer 记忆冲突时，以严格重读的 Issue 为准；buffer 不得用于绕过认领、重试或阶段保护。不新增本地状态文件。
+**边界**：buffer 只决定"本轮输入如何解释"，不改 §3.0.1 状态分发、T0 铁律、权限矩阵，也不替代 Issue 的唯一事实来源地位。远端证据与 buffer 记忆冲突时，以严格重读的 Issue 为准；buffer 不得用于绕过认领、重试或阶段保护。不新增本地状态文件（唯一例外：§3.8 全局反馈队列——它是用户授权沉淀的用户数据，不是 buffer 状态）。
 
 ## T0 铁律（最高优先级，与任何规则冲突时以此为准）
 
@@ -460,6 +462,7 @@ Issue(编号 N)
   3. QA 按 [集成契约](references/integration.md) 执行 `integration push <N>`、PR 查重/创建/回读，并将 URL、base/head 与已验收提交评论回 Issue；默认不自动合并。离线或无推送权限仅本地合并仍保持 open，无法继续则报告并按权限转 blocked。
   4. 仅在 PR 交付已确认（或有已进上游证据）后，由 QA 执行 `./scripts/git-ops.sh --role reviewer issue close <N>` 关闭 Issue（关闭权专属 QA），结束循环；
   5. 释放认领：`./scripts/git-ops.sh issue claim <N> release`（移除 `riper-claimed` + 释放评论；闭环终态不再占用该 Issue）。
+  6. 闭环终点反馈询问：`bash <Skill根>/scripts/feedback.sh list` 若待上报队列非空，向用户呈报一次并询问是否按 §3.8 上报（拒绝=`dismiss`，"以后再说"=保持 pending；空队列零打扰）。
 - **无法验证且无已确认 FAIL**：不设置 verified、不关闭、不增加 retry；报告缺失环境/证据、已完成项与恢复条件。无法推进时由开发/QA 按权限转 blocked 并释放认领，恢复后严格重读与分发。
 - **存在已确认 FAIL**（即使同时有无法验证项）：
   1. 登记重试计数（**防死循环：最多重试 3 次**）：`./scripts/git-ops.sh --role reviewer issue retry <N> incr`（排他写入 `riper-retry-K`，不依赖 Agent 记忆）；
@@ -473,6 +476,15 @@ Issue(编号 N)
 发现角色操作被拒绝、guard 越界或 Issue 阶段证据缺失时，先保留原拒绝和任务纠偏，再按 [反馈协议](references/feedback-loop.md) 组织事实、离线草稿、去重、授权提交与维护验证。阶段交接必须检查标签、产物与未完成验收。反馈不替代 QA、不自动计入 retry；疑似问题不直接归责。
 
 `bash <Skill根>/scripts/feedback.sh draft <permission|guard|evidence> <suspected|confirmed|intercepted|false-positive>` 仅输出有限字段草稿，不联网、不落盘、不上报；所有角色可用。上游写入必须明确授权并经维护工作副本的 git-ops.sh，详见协议。
+
+**全局问题沉淀队列（仅纠错）**：使用过程中发现 iloop 自身的问题——bug、协议/脚本行为与文档冲突、误导性文档、错误的体验行为——由任何角色执行 `bash <Skill根>/scripts/feedback.sh add <bug|protocol|doc|behavior> "<单行摘要>" ["<单行细节>"]` 静默沉淀到 skill 根外的全局队列（`~/.agents/iloop-feedback/`，跨会话/项目、升级替换不触碰；`ILOOP_FEEDBACK_DIR` 可覆盖）。**不收集功能建议**：判断为"希望改进"而非"行为错误"的不沉淀。上述三类规则检测场景（permission/guard/evidence）在生成草稿的同时以 `add protocol` 沉淀一条（已知规则码前缀进摘要）。沉淀不打断当前任务；详见 [反馈协议](references/feedback-loop.md) 的全局队列节。
+
+**待上报询问点（队列非空时至多各问一次）**：
+- §3.7 闭环终点：close 与释放认领完成后；
+- buffer 挂起：挂起本就在等用户，在同一消息内附带询问；
+- buffer 退出：交接摘要之后。
+
+用户同意上报 → 按维护工作副本协议逐条执行（核验 remote → 上游去重 → 呈报脱敏内容 → 用户逐条授权 → 经副本 `git-ops.sh --role <角色> issue create` → `feedback.sh reported <ID> <issue-url>` 回填，ID↔issue URL 可追溯）；拒绝 → `feedback.sh dismiss <ID>`（终态，永不再自动询问）；"以后再说" → 保持 pending。`list [pending|all]` / `show <ID>` 随时可查，不依赖询问点。
 
 ## 3.9 运行时输出与阶段摘要（可选观测）
 
@@ -496,6 +508,7 @@ Agent 在启动/分发、阶段交接、暂停、恢复、结束时按 [阶段�
 "排 plan，不要执行"           → 口头覆盖：只走到计划写回（入口已超过计划则报告并停止）
 "检查环境 / cli 没装"          → 执行 doctor，输出安装与授权指南
 "检查 skill 更新"              → 在 Skill 根运行 scripts/check-update.sh；有更高稳定 tag 则询问是否按 INSTALL.md 升级
+"这个问题记一下/沉淀反馈"       → §3.8 全局队列：feedback.sh add 静默沉淀纠错类问题（仅纠错，不收功能建议）；闭环终点/挂起/退出时询问是否上报
 ```
 
 一次有效调用后会话保持 buffer：中途提问、确认或报阻塞都只是**挂起**，用户回复即从挂起点恢复；只有显性退出或新会话才离开。挂起时输出 `[iloop-buffer]` 状态头（见 §会话 buffer）。
@@ -514,6 +527,12 @@ Agent 在启动/分发、阶段交接、暂停、恢复、结束时按 [阶段�
 ./scripts/git-ops.sh workspace finish <N>                         → 清理 Issue N 的本地工作区（仅当干净且已合并进上游；不推送、不合并）
 ./scripts/git-ops.sh doctor                                       → 环境 + CLI + 授权 + 标签体系就绪自检
 exec 3>events.ndjson; ILOOP_EVENTS_FD=3 ./scripts/git-ops.sh …     → 受覆盖命令向 fd3 写一条 NDJSON 事件（默认关闭，契约见 references/runtime-output.md）
+```
+
+```
+bash <Skill根>/scripts/feedback.sh add <bug|protocol|doc|behavior> "<摘要>" ["<细节>"] → 全局纠错反馈队列：静默沉淀（离线）
+bash <Skill根>/scripts/feedback.sh list [pending|all] | show <ID> | dismiss <ID> | reported <ID> <https-url>
+                                                                  → 查看/审阅/拒绝/上报回填（上报流程见 §3.8 与 references/feedback-loop.md）
 ```
 
 ## 5. 安装与注册（让 `/iloop` 生效）
