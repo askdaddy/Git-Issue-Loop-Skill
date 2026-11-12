@@ -998,34 +998,100 @@ clear_issue_family() {
   log_info "已清空 ${family} 族标签（回读确认，无关标签未写入）。"
 }
 
-# 给 Issue 添加标签
-raw_label_add() {
-  local num="$1" label="$2"
-  local __plat
-  __plat="$(detect_platform)" || exit 1
+# 确保仓库级自由标签存在（create-only）。已存在时不创建、也不改写其颜色/描述。
+# 返回：0 = 标签已存在或本次创建成功；1 = 无法确认存在（原因写入 ILOOP_LABEL_ENSURE_ERR）。
+# 设计取舍（Issue #26）：
+#   - 读取标签列表失败即 fail-closed，绝不把「读不到」当成「不存在」去盲目建标签。
+#   - 查重前置：Gitea 对非 scoped 名称不查重，无条件 create 会翻倍制造同名标签。
+#   - create 失败不在此处打印致命错误，交由调用方在 add 之后判定
+#     （覆盖列取上限未命中与并发已创建两种竞态：add 成功即说明标签实为存在）。
+raw_label_ensure() {
+  local label="$1" names="" err="" __plat
+  ILOOP_LABEL_ENSURE_ERR=""
+  __plat="$(detect_platform)" || return 1
+  if ! names="$(raw_label_names)"; then
+    ILOOP_LABEL_ENSURE_ERR="无法读取仓库标签列表，未创建 '${label}'"
+    return 1
+  fi
+  # 大小写不敏感：GitHub 标签名本身大小写不敏感，避免造出近似重复标签。
+  if printf '%s\n' "${names}" | grep -Fixq -- "${label}"; then
+    return 0
+  fi
+  # 受管族保护（C1）：check_permission 只拦小写规范名，这里再拦 P0/P1、RIPER-PLAN 之类
+  # 大小写变体，确保本函数不为优先级/状态/重试/认领族打开新的创建路径。
+  # 只在「缺失 → 即将创建」时拦截：已存在的同名标签仍按原行为放行 add，不改变既有语义。
+  local lc
+  lc="$(printf '%s' "${label}" | tr '[:upper:]' '[:lower:]')"
+  if is_priority_label "${lc}" || is_status_label "${lc}" \
+     || is_retry_label "${lc}" || is_claim_label "${lc}"; then
+    ILOOP_LABEL_ENSURE_ERR="'${label}' 属于受管标签族，只能经 issue priority/status/retry/claim 操作，不自动创建"
+    return 1
+  fi
   case "${__plat}" in
     gh)
       require_cli gh
-      gh issue edit "${num}" --add-label "${label}" >/dev/null
+      if ! err="$(gh label create "${label}" --color ededed 2>&1 >/dev/null)"; then
+        ILOOP_LABEL_ENSURE_ERR="gh label create 失败：${err}"
+        return 1
+      fi
+      ;;
+    glab)
+      require_cli glab
+      # glab 的 --color 需带 # 前缀；新版要求 --name、旧版接受位置参数，故两者都试
+      if ! err="$(glab label create --name "${label}" --color "#ededed" 2>&1 >/dev/null)" \
+         && ! err="$(glab label create "${label}" --color "#ededed" 2>&1 >/dev/null)"; then
+        ILOOP_LABEL_ENSURE_ERR="glab label create 失败：${err}"
+        return 1
+      fi
+      ;;
+    tea)
+      require_cli tea
+      # tea 0.15.x 无 label edit 能力；--color 必填（缺省会报 invalid color format）
+      if ! err="$(tea_cmd labels create --name "${label}" --color ededed 2>&1 >/dev/null)"; then
+        ILOOP_LABEL_ENSURE_ERR="tea labels create 失败：${err}"
+        return 1
+      fi
+      ;;
+    *) return 1 ;;
+  esac
+  return 0
+}
+
+# 给 Issue 添加标签
+# 自由标签可能尚未存在：添加前先经 raw_label_ensure 查重并补建（对齐 §1.2(5) 承诺）。
+# 四族保护不在此处：调用方 check_permission 已拦截优先级/状态/重试/认领，
+# 本函数不得为它们提供任何新的创建路径。
+raw_label_add() {
+  local num="$1" label="$2" ensure_rc=0 add_rc=0
+  local __plat
+  __plat="$(detect_platform)" || exit 1
+  # ensure 失败不立即中止：由下方 add 的结果最终判定（见 raw_label_ensure 注释）。
+  raw_label_ensure "${label}" || ensure_rc=$?
+  case "${__plat}" in
+    gh)
+      require_cli gh
+      gh issue edit "${num}" --add-label "${label}" >/dev/null || add_rc=$?
       ;;
     glab)
       require_cli glab
       glab issue update "${num}" --label "${label}" >/dev/null 2>/dev/null \
-        || glab issue label "${num}" "${label}" >/dev/null # 新旧版本 glab 兼容
+        || glab issue label "${num}" "${label}" >/dev/null 2>/dev/null || add_rc=$? # 新旧版本 glab 兼容
       ;;
     tea)
       require_cli tea
-      # tea 0.15.1 无 labels add 子命令，打标签走 issues edit --add-labels；
-      # 自由标签可能尚未存在：仅在缺失时创建（Gitea 对非 scoped 名称不查重，
-      # 无条件 create 会翻倍制造同名标签），需带 --color
-      if ! tea_cmd labels list 2>/dev/null \
-            | awk -F'│' '{gsub(/^[[:space:]]+|[[:space:]]+$/,"",$4); print $4}' \
-            | grep -Fxq -- "${label}"; then
-        tea_cmd labels create --name "${label}" --color ededed >/dev/null 2>&1 || true
-      fi
-      tea_cmd issues edit "${num}" --add-labels "${label}" >/dev/null
+      # tea 0.15.1 无 labels add 子命令，打标签走 issues edit --add-labels
+      tea_cmd issues edit "${num}" --add-labels "${label}" >/dev/null 2>/dev/null || add_rc=$?
       ;;
   esac
+  if [[ "${add_rc}" -ne 0 ]]; then
+    if [[ "${ensure_rc}" -ne 0 ]]; then
+      log_error "添加标签 '${label}' 失败（add 退出码 ${add_rc}），且创建前置未成功：${ILOOP_LABEL_ENSURE_ERR:-原因未知}"
+    else
+      log_error "添加标签 '${label}' 失败（add 退出码 ${add_rc}；标签已存在，请检查权限或 Issue 状态）"
+    fi
+    _iloop_evt_mark "failed" "unknown" "add-failed" "unknown"
+    return "${add_rc}"
+  fi
 }
 
 # 移除 Issue 标签（尽力而为：目标标签不存在时不报错）
