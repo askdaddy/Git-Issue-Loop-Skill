@@ -86,7 +86,7 @@ CLIs: `gh`, `glab`, and `tea`.
   merging and publishing. The PR base defaults to the repository default branch;
   `--base <branch>` targets a non-default integration branch. Local-only
   delivery keeps the Issue open.
-- 23 shell invariant suites under `test/`, covering CLI behavior through stubs
+- 24 shell invariant suites under `test/`, covering CLI behavior through stubs
   and contract checks. The intake scenario walkthroughs are protocol reviews,
   not independent Agent end-to-end tests.
 
