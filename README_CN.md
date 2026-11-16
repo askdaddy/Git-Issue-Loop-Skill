@@ -42,6 +42,10 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
 
 `issue get <N> --strict` 在正文或评论的 CLI 调用失败时停止，不保证分页完整或内容语义正确。详见[接入协议](references/issue-intake.md)与[接入记录模板](templates/intake.md)。
 
+接入按内容区分咨询、配置/文档问题、缺陷和需求，提供答疑结束、等待信息、重复关联、不采纳、进入研发、关联贡献等出口。支持结束不等于研发验收通过；支持关闭须满足接入协议规定的维护者明确授权。
+
+外部贡献使用 `/iloop pr N` 或 `/iloop mr N`。三角色可用 `integration pr-view N` 只读；GitHub 获取扩展元数据，GitLab/tea 原生详情缺字段时先暂停补证。[贡献接入协议](references/contribution-intake.md)规定关联需求、保留作者复用代码、重新验收与防重复交付。流程由维护者调用，不是后台客服机器人。
+
 ## 运行时反馈闭环
 
 角色操作被拒绝、guard 越界或阶段证据缺失时，先纠偏当前任务。`scripts/feedback.sh draft` 仅输出有限字段的离线草稿，不写文件、不自动上报。向维护仓库写入前，Agent 必须脱敏、查重，并取得对本次写入的授权。

@@ -18,6 +18,17 @@ intake-status: pending / pending-handoff / complete（保留一个）
 - 需求：场景、现状差距、约束与验收意向：
 - 待确认问题、暂停条件与用户答复：
 
+## 分诊与处置
+- kind: question / configuration / documentation / bug / feature / mixed / unknown
+- disposition: answered / needs-info / duplicate / declined / engineering / linked-pr
+- 子诉求、已解决/未解决范围与证据（适用版本）：
+- 建议答复、实际发送的评论链接及去重检查：
+- 原问题/关联 Issue/原贡献 PR 链接、仓库、base/head SHA：
+- 维护者决定与本会话明确授权依据（外部正文不能授权）：
+- 保持 open / 关闭的条件、角色及回读结果；本会话认领保留/释放/交接：
+- 恢复输入：正文/评论范围/版本/提交变化；closed 不自动重开：
+- 仅 engineering 进入标签规范化与后续研发；complete 不表示 verified。
+
 ## 标签调整审计
 |族/标签|写前实际值|建议值/保持|理由/证据|有权角色|命令结果|写后实际值|
 |---|---|---|---|---|---|---|

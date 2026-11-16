@@ -109,6 +109,19 @@ records go to the Planner, who verifies the report before changing labels:
 not certify pagination completeness or semantic accuracy. See the
 [intake protocol](references/issue-intake.md) and [record template](templates/intake.md).
 
+Support intake distinguishes questions, configuration/documentation problems, bugs,
+and feature requests. It can answer, wait for information, link a duplicate,
+record a maintainer decline, enter engineering, or associate a contribution.
+Support completion is not engineering verification; support closure requires the
+specific maintainer authorization described in the intake protocol.
+
+Use `/iloop pr N` or `/iloop mr N` for an external contribution. All three roles
+can read it with `integration pr-view N`; GitHub requests expanded metadata,
+while GitLab/tea native output may require additional evidence before proceeding.
+The [contribution protocol](references/contribution-intake.md) covers requirement
+association, author-preserving reuse, fresh acceptance, and avoiding duplicate
+PR delivery. This is a maintainer-invoked workflow, not a background support bot.
+
 ## Runtime feedback
 
 Permission refusals, workspace guard failures, and missing stage evidence first

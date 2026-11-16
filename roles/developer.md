@@ -42,3 +42,7 @@
 ## 显式标签修复
 
 遵循 SKILL.md 的目标检查与显式修复规则；none 只用于有证据与授权的修复，不是交接/接入的默认清理。priority none 仅 PM；status none 只清当前角色有权设置的实际状态，混有无权状态则整体拒绝。清空前后回读，失败不假称成功，不自动清 retry/claim；PR 与未知目标不写入。
+
+## 外部贡献
+
+按 references/contribution-intake.md 核验原贡献与当前验收提交映射，保留作者及来源；三角色均可 integration pr-view 只读，其他权限不变。新提交影响旧证据时重新核验，原 PR 与替代交付先明确决策，避免重复建 PR。

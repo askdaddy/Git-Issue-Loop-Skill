@@ -4,6 +4,17 @@ All notable changes to stable `iloop` releases are recorded here. Releases use
 immutable `vX.Y.Z` tags; installation follows the highest stable tag rather
 than `main`.
 
+## [Unreleased]
+
+### Added
+
+- Support dispositions for external reports, with explicit authorization for
+  support closure, resumable evidence and no forced engineering loop. (#73)
+- External PR/MR intake with requirement association, attributed code reuse,
+  fresh acceptance and an explicit original-versus-replacement delivery decision.
+- Read-only `integration pr-view` for all three roles; GitHub requests expanded
+  contribution metadata. Other platforms retain native detail completeness gates.
+
 ## [0.6.16] - 2026-10-29
 
 ### Added
