@@ -830,6 +830,32 @@ cmd_issue_comment() {
 # 标签底层操作（各平台原生命令）
 # ---------------------------------------------------------------------------
 
+# 使用 glab 内置 jq 精确匹配名称，不依赖外部 JSON 解析器；逐页查询避免漏掉后续标签。
+# 查询失败或 ID 无效时关闭更新路径，不能将权限/网络/解析错误当成「标签不存在」。
+raw_glab_label_id() {
+  local name="$1" page=1 rows ids
+  while :; do
+    if ! rows="$(glab label list --output json --per-page 100 --page "${page}" \
+        --jq '.[] | [.id, .name] | @tsv')"; then
+      log_error "glab 查询标签 '${name}' 的 ID 失败（第 ${page} 页）。"
+      return 1
+    fi
+    [[ -n "${rows}" ]] || break
+    ids="$(printf '%s\n' "${rows}" | awk -F '\t' -v name="${name}" '$2 == name {print $1}')"
+    if [[ -n "${ids}" ]]; then
+      if [[ ! "${ids}" =~ ^[1-9][0-9]*$ ]]; then
+        log_error "glab 标签 '${name}' 的 ID 无效或不唯一。"
+        return 1
+      fi
+      printf '%s' "${ids}"
+      return 0
+    fi
+    page=$((page + 1))
+  done
+  log_error "glab 未找到名称精确匹配的标签 '${name}'。"
+  return 1
+}
+
 # 在仓库中创建标签（幂等）：不存在则创建，已存在则更新颜色与描述，两者均不报错。
 # 用法：raw_label_create <名称> <颜色(6位hex，不带#)> <描述>
 # 输出：向 stdout 打印 created / updated（供上层汇总）；两者均失败时 return 1。
@@ -852,14 +878,21 @@ raw_label_create() {
       ;;
     glab)
       require_cli glab
-      # glab 的 --color 需带 # 前缀；新版 glab（>=1.118）要求 --name，旧版接受位置参数，故两者都试
-      if glab label create --name "${name}" --color "#${color}" --description "${desc}" >/dev/null 2>&1 \
-         || glab label create "${name}" --color "#${color}" --description "${desc}" >/dev/null 2>&1; then
+      # create 的名称参数有版本差异；edit 则要求数字 ID，不能复用 create 的语法。
+      local create_error legacy_error label_id
+      if create_error="$(glab label create --name "${name}" --color "#${color}" --description "${desc}" 2>&1)" \
+         || legacy_error="$(glab label create "${name}" --color "#${color}" --description "${desc}" 2>&1)"; then
         printf 'created'
-      elif glab label edit --name "${name}" --color "#${color}" --description "${desc}" >/dev/null 2>&1 \
-         || glab label edit "${name}" --color "#${color}" --description "${desc}" >/dev/null 2>&1; then
-        printf 'updated'
+      elif label_id="$(raw_glab_label_id "${name}")"; then
+        if glab label edit --label-id "${label_id}" --color "#${color}" --description "${desc}" >&2; then
+          printf 'updated'
+        else
+          log_error "glab 更新标签 '${name}'（ID ${label_id}）失败。"
+          return 1
+        fi
       else
+        log_error "glab 无法创建或定位标签 '${name}'；创建命令详情："
+        printf '%s\n%s\n' "${create_error}" "${legacy_error}" >&2
         return 1
       fi
       ;;
@@ -1678,7 +1711,7 @@ cmd_labels_init() {
       ok=$((ok + 1))
     else
       printf '  %-8s %-18s\n' "FAILED" "${l}"
-      log_error "标签 '${l}' 创建/更新失败（检查 CLI 权限：GitHub 需 repo scope）。"
+      log_error "标签 '${l}' 创建/更新失败；不能仅据此判定为权限问题，请结合 CLI 详情诊断。"
       fail=$((fail + 1))
     fi
   done

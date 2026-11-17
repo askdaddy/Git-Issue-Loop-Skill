@@ -4,6 +4,15 @@ All notable changes to stable `iloop` releases are recorded here. Releases use
 immutable `vX.Y.Z` tags; installation follows the highest stable tag rather
 than `main`.
 
+## [0.6.18] - 2026-11-17
+
+### Fixed
+
+- GitLab label initialization resolves exact label names to numeric IDs before
+  updating with `glab label edit --label-id` (glab 1.130.0). Lookup paginates,
+  invalid or ambiguous IDs stop updates, and CLI failure details are preserved
+  instead of reporting all failures as permission problems.
+
 ## [0.6.17] - 2026-11-17
 
 ### Added

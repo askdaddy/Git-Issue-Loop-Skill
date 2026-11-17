@@ -70,6 +70,9 @@ remove_label() { grep -Fxv -- "$2" "$1" > "$1.tmp" || true; mv "$1.tmp" "$1"; }
 add_label() { grep -Fxq -- "$2" "$1" 2>/dev/null || printf '%s\n' "$2" >> "$1"; }
 [[ "${1:-}" == "auth" ]] && exit 0
 if [[ "${1:-} ${2:-}" == "label list" ]]; then
+  if [[ " $* " == *" --jq "* ]]; then
+    awk '{printf "%d\t%s\n", NR, $0}' "$CATALOG"; exit 0
+  fi
   first=1; printf '['; while IFS= read -r name; do [[ $first -eq 0 ]] && printf ','; printf '{"name":"%s"}' "$name"; first=0; done < "$CATALOG"; printf ']\n'; exit 0
 fi
 if [[ "${1:-} ${2:-}" == "label create" ]]; then

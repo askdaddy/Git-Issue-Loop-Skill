@@ -7,7 +7,7 @@
 #
 # Verifies the three frozen acceptance criteria from plan.md:
 #   step 1: tea check_auth never false-negatives via grep -q SIGPIPE + pipefail
-#   step 2: glab label create/edit use --name first, positional fallback (old glab)
+#   step 2: glab create syntax fallback; existing labels edit by numeric ID
 #   step 3: tea labels init is idempotent — no `labels create` for existing labels
 # Run from repository root: bash test/iloop-cli-compat-invariants.sh
 set -euo pipefail
@@ -71,7 +71,7 @@ chmod +x "$WORK/teabin/tea"
 # stub: glab.  GLAB_MODE=new  -> 1.118: requires --name, rejects positional.
 #              GLAB_MODE=old  -> legacy: rejects --name, accepts positional.
 #   create: succeeds only if the label is new (else exit 1, "already exists").
-#   edit:   succeeds only if the label exists.
+#   edit:   requires --label-id, matching glab 1.130.0.
 # ---------------------------------------------------------------------------
 mkdir -p "$WORK/glabbin"
 cat > "$WORK/glabbin/glab" <<STUB
@@ -80,7 +80,24 @@ echo "\$*" >> "\${STUB_LOG:-/dev/null}"
 if [[ "\${1:-}" == "auth" ]]; then exit 0; fi
 if [[ "\${1:-}" != "label" ]]; then exit 0; fi
 sub="\${2:-}"
+if [[ "\$sub" == "edit" ]]; then
+  [[ "\${3:-}" == --label-id && "\${4:-}" =~ ^[0-9]+$ ]] || { echo 'unknown edit argument' >&2; exit 1; }
+  if [[ "\${GLAB_FAILURE:-}" == edit ]]; then echo '403 edit denied' >&2; exit 1; fi
+  exit 0
+fi
 if [[ "\$sub" == "list" ]]; then
+  if [[ " \$* " == *" --jq "* ]]; then
+    case "\${GLAB_FAILURE:-}" in
+      list) echo '502 label lookup unavailable' >&2; exit 1 ;;
+      missing) exit 0 ;;
+      invalid) awk '{printf "null\t%s\n", \$0}' "\${GLAB_STATE}"; exit 0 ;;
+      duplicate) awk '{printf "1\t%s\n2\t%s\n", \$0, \$0}' "\${GLAB_STATE}"; exit 0 ;;
+      paged)
+        if [[ " \$* " == *" --page 1 "* ]]; then printf '999\tp0-other\n'; exit 0; fi ;;
+    esac
+    awk '{printf "%d\t%s\n", NR, \$0}' "\${GLAB_STATE}"
+    exit 0
+  fi
   st="\${GLAB_STATE:-/dev/null}"
   if [[ " \$* " == *" --output json "* ]]; then
     [[ "\${GLAB_MODE:-new}" == "old" ]] && exit 1
@@ -190,7 +207,7 @@ else
 fi
 
 #############################################################################
-echo "=== step 2: glab label create/edit — --name first, positional fallback ==="
+echo "=== step 2: glab create syntax fallback and numeric-ID edits ==="
 
 # 2a: new glab (1.118, requires --name): first init creates all 15, no FAILED.
 : > "$WORK/glab_new.state"
@@ -203,12 +220,40 @@ if printf '%s' "$OUT" | grep -qE 'created|updated'; then pass "new-glab labels i
 if grep -qE 'label create --name ' "$LOG"; then pass "new-glab used 'label create --name'"; else fail "new-glab did not use 'label create --name'"; LOGCAT="$(cat "$LOG")"; echo "  log: $LOGCAT"; fi
 if grep -qE 'label create [^-]' "$LOG"; then fail "new-glab still issued a positional 'label create' (should require --name)"; else pass "new-glab issued no positional-only create as primary"; fi
 
-# 2b: new glab second run -> create fails (exists), edit --name path used => updated.
+# 2b: new glab second run -> create fails (exists), edit --label-id path used => updated.
 : > "$LOG"
 probe "$GLAB_REPO" "$WORK/glabbin" labels init
 if [[ "$RC" -eq 0 ]]; then pass "new-glab second labels init exits 0 (idempotent)"; else fail "new-glab second labels init rc=$RC"; fi
 if printf '%s' "$OUT" | grep -q 'FAILED'; then fail "new-glab second init reported FAILED"; else pass "new-glab second init: no FAILED"; fi
-if grep -qE 'label edit --name ' "$LOG"; then pass "new-glab fallback used 'label edit --name' on existing labels"; else fail "new-glab did not reach 'label edit --name'"; fi
+if grep -qE 'label edit --label-id ' "$LOG"; then pass "new-glab fallback used 'label edit --label-id' on existing labels"; else fail "new-glab did not reach 'label edit --label-id'"; fi
+
+# 2b regression controls: glab 1.130.0 rejects all name-based edit forms.
+if grep -E 'label edit (--name |[^-])' "$LOG" >/dev/null; then
+  fail "name-based glab edit attempted"
+else
+  pass "existing labels only edited by numeric ID"
+fi
+GLAB_FAILURE=paged; export GLAB_FAILURE
+probe "$GLAB_REPO" "$WORK/glabbin" labels init
+[[ "$RC" -eq 0 ]] && grep -q -- '--page 2' "$LOG" \
+  && pass "ID lookup paginates and matches exact name" || fail "paginated ID lookup rc=$RC"
+for mode in list missing invalid duplicate edit; do
+  GLAB_FAILURE="$mode"
+  probe "$GLAB_REPO" "$WORK/glabbin" labels init
+  [[ "$RC" -ne 0 ]] && pass "$mode failure exits non-zero" || fail "$mode failure returned success"
+  if [[ "$mode" != edit ]]; then
+    if grep -q 'label edit' "$LOG"; then fail "$mode failure attempted edit"; else pass "$mode failure prevents edit"; fi
+  fi
+  case "$mode" in
+    list) detail='502 label lookup unavailable' ;;
+    edit) detail='403 edit denied' ;;
+    missing) detail='创建命令详情' ;;
+    *) detail='ID 无效或不唯一' ;;
+  esac
+  [[ "$ERR" == *"$detail"* ]] && pass "$mode diagnostic retained" || fail "$mode diagnostic missing: $ERR"
+  [[ "$ERR" != *'检查 CLI 权限：GitHub'* ]] && pass "$mode not misreported as GitHub permissions" || fail "$mode misleading permission message"
+done
+unset GLAB_FAILURE
 
 # 2c: old glab (positional-only): --name rejected, positional fallback works.
 : > "$WORK/glab_old.state"
