@@ -101,6 +101,8 @@ QA PASS → `riper-verified` → 推送并核验 PR 交付 → 写回证据 → 
 ~/.agents/skills/iloop/scripts/git-ops.sh labels init
 ```
 
+`labels init` 在 GitHub / GitLab 更新已有标签的颜色和描述；tea 路径只跳过已有标签。doctor 仅检查标签名称是否齐全，不证明更新能力可用。glab 1.130.0 的 ID 更新兼容与失败排查见 [CLI 指南](references/cli-setup.md#标签体系初始化)。
+
 ## 运行要求
 
 - Git，以及会从 `~/.agents/skills/` 加载 Skill 的 Agent 宿主。
@@ -120,13 +122,20 @@ scripts/git-ops.sh       平台路由、Issue 操作与安全约束
 scripts/check-update.sh  对照远端最高稳定 tag 检查已安装 Skill 是否有更新
 scripts/feedback.sh      生成有限字段的离线反馈草稿
 scripts/runtime-events.sh 可选的 fd3 NDJSON 运行事件输出
+scripts/integration.sh   由 git-ops.sh 加载的推送、PR、Release 与清理操作
 roles/                   Planner、Developer、Reviewer 的角色说明
 templates/               intake、spec、design、plan、verify-report 与阶段摘要模板
 references/              CLI 配置、第三方接入、反馈、集成、运行时输出与最少代码梯子
 test/                    shell 不变量测试与第三方接入协议走查
 CHANGELOG.md             稳定版本变更记录
-docs/issues/<N>/         降级落盘的阶段文档，仅当远程 Issue 平台不可用时写入
+docs/README.md           当前文档入口、维护检查与历史材料说明
+docs/issues/1/          保留的历史自举记录，不是当前规范
+docs/issues/<N>/         新阶段文档仅在远程 Issue 平台不可用时降级写入
 ```
+
+## 项目维护
+
+本仓库是静态 Skill 与 Bash 脚本，没有 Node 依赖安装或打包步骤。文档导航、全套测试命令及历史材料边界见 [docs/README.md](docs/README.md)。文档、脚本行为和发布版本应分别按其拥有的源文件核对；历史 Issue 计划不作为当前规范。
 
 ## 稳定版发布约定
 

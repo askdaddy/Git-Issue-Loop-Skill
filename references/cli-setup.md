@@ -40,7 +40,7 @@
 ./scripts/git-ops.sh labels init
 ```
 
-- **幂等**：标签不存在则创建，已存在则更新颜色与描述；重复执行安全，不会报错也不会产生重复标签（Gitea 对非 scoped 名称不查重，脚本以「先查存在再创建」保证幂等）。
+- **幂等边界**：GitHub / GitLab 的标签不存在则创建，已存在则更新颜色与描述；Gitea / Forgejo 因当前 tea 路径无更新能力，已有同名标签会跳过，不会同步颜色和描述。Gitea 对非 scoped 名称不查重，脚本以「先查存在再创建」避免重复。CLI、网络或权限失败仍会返回非零退出码。
 - **doctor 会检查**：`./scripts/git-ops.sh doctor` 的最后一步会比对远端标签是否齐全，缺失即列出清单、提示运行 `labels init` 并 `exit 1`；若 `label list` 本身失败（网络/权限），则报「无法获取远端标签」而非误报「标签缺失」。
 
 **15 个内置标签清单**（与脚本各族常量完全一致）：
@@ -52,7 +52,9 @@
 | 重试（3） | `riper-retry-1` `riper-retry-2` `riper-retry-3` |
 | 认领（1，非排他） | `riper-claimed` |
 
-**各平台最小权限**：建标签需要写权限——GitHub 的 `gh` 需 `repo` scope（仅 `read` 不足以创建标签）；GitLab 的 `glab` 需 Developer 及以上角色；Gitea/Forgejo 的 `tea` 需对仓库有写权限。权限不足时 `labels init` 会在对应标签上报 FAILED 并 `exit 1`。
+**检查边界**：doctor 确认标签名称是否齐全，不验证颜色、描述或标签更新能力。已有 15 个标签时 doctor 通过，不代表 `labels init` 的更新分支一定成功。初始化失败应按 CLI 原始错误区分参数不兼容、网络与权限问题，不能仅凭 FAILED 判定为未授权。
+
+**权限**：账号及凭据都必须允许目标仓库的标签管理。GitHub classic PAT 的 `repo` scope 与 fine-grained token 的仓库权限不是同一套表达；交互登录与凭据要求见 [gh auth login](https://cli.github.com/manual/gh_auth_login)。GitLab 还受实例版本和项目角色限制，不能把 Developer 当作统一的最小角色，见 [GitLab 标签权限](https://docs.gitlab.com/user/project/labels/)。Gitea / Forgejo 需核对目标实例、仓库写权限与 token 授权范围。
 
 ## 1. GitHub → `gh`
 
@@ -79,7 +81,7 @@ gh auth login
 gh auth status        # 验证
 ```
 
-Token 方式（企业内网 / 无浏览器环境）：在 GitHub → Settings → Developer settings → Personal access tokens 生成，**需勾选 `repo` 权限**（Issue 读写）；自建实例还需 `read:org`（按需）。
+Token 方式（企业内网 / 无浏览器环境）：由使用者在 GitHub → Settings → Developer settings → Personal access tokens 生成。`gh auth login --with-token` 的 classic PAT 最小 scopes 按官方手册为 `repo`、`read:org`、`gist`；fine-grained PAT 建议通过 `GH_TOKEN` 使用，并按目标仓库和实际操作配置权限，不能照搬 classic scopes。参见 [gh auth login](https://cli.github.com/manual/gh_auth_login)。
 
 非交互环境可用环境变量：
 
@@ -127,7 +129,8 @@ export GITLAB_HOST=gitlab.your-corp.com   # 自建实例
 
 ### 常见问题
 
-- 自建实例证书问题：`glab config set check_update false`，或配置 `SSL_CERT_FILE`。
+- 自建实例证书问题：按管理员提供的 CA 证书配置 `glab config set ca_cert /path/to/ca.pem --host gitlab.your-corp.com`。`check_update false` 只关闭更新提示，不能修复证书信任；参见 [glab 连接配置](https://docs.gitlab.com/cli/connection/)。
+- glab 1.130.0 的标签更新要求数字 ID：v0.6.18 起脚本按名称精确匹配、分页查询 ID，再执行 `glab label edit --label-id <ID>`；`--name` 或位置参数不能用于该更新命令。查询失败或 ID 无效时停止，保留 CLI 失败详情。参见 [glab label edit](https://docs.gitlab.com/cli/label/edit/)。
 - 标签移除行为随 glab 版本略有差异，本 Skill 的 `git-ops.sh` 已做新旧版本兼容回退。
 
 ## 3. Gitea / Forgejo → `tea`

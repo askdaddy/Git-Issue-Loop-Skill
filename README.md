@@ -210,6 +210,11 @@ For an initial label setup in a repository, run:
 ~/.agents/skills/iloop/scripts/git-ops.sh labels init
 ```
 
+For existing labels, `labels init` updates colors and descriptions on GitHub and
+GitLab; the tea path skips existing labels. Doctor checks label names only, so
+passing it does not establish that updates work. See the [CLI guide](references/cli-setup.md)
+for glab 1.130.0 ID-based updates and failure diagnosis.
+
 ## Requirements
 
 - Git and an Agent host that loads Skills from `~/.agents/skills/`.
@@ -233,14 +238,25 @@ scripts/git-ops.sh       Platform routing, Issue operations, and safeguards
 scripts/check-update.sh  Compares the installed Skill against the highest stable tag
 scripts/feedback.sh      Generates offline, limited-field feedback drafts
 scripts/runtime-events.sh Opt-in NDJSON runtime events written to fd 3
+scripts/integration.sh   Push, PR, Release, and cleanup operations loaded by git-ops.sh
 roles/                   Planner, Developer, and Reviewer role instructions
 templates/               Intake, spec, design, plan, verification-report, and run-summary templates
 references/              CLI setup, intake, feedback, integration, runtime output, minimum-code ladder
 test/                    Shell invariant suites and intake protocol walkthroughs
 CHANGELOG.md             Stable-release change history
-docs/issues/<N>/         Degraded-fallback stage documents, written only when the
-                         remote Issue platform is unavailable
+docs/README.md           Documentation map, maintenance checks, and historical context
+docs/issues/1/          Retained historical bootstrap records, not current rules
+docs/issues/<N>/         New stage documents only when the remote Issue platform
+                         is unavailable
 ```
+
+## Project maintenance
+
+This repository contains a static Skill and Bash scripts; it has no Node dependency
+installation or build step. See [docs/README.md](docs/README.md) for the document
+map, full-suite command, and historical-record boundaries. Verify documentation,
+script behavior, and release versions against their owning sources; historical
+Issue plans are not current specifications.
 
 ## Stable releases
 
