@@ -4,6 +4,24 @@ All notable changes to stable `iloop` releases are recorded here. Releases use
 immutable `vX.Y.Z` tags; installation follows the highest stable tag rather
 than `main`.
 
+## [0.6.17] - 2026-11-17
+
+### Added
+
+- Support dispositions for external reports, with explicit authorization for
+  support closure, resumable evidence and no forced engineering loop. (#73)
+- External PR/MR intake with requirement association, attributed code reuse,
+  fresh acceptance and an explicit original-versus-replacement delivery decision.
+- Read-only `integration pr-view` for all three roles; GitHub requests expanded
+  contribution metadata. Other platforms retain native detail completeness gates.
+
+### Validation
+
+- All 24 shell invariant suites pass, including contribution-read role/routing
+  fixtures; support/contribution scenarios reviewed separately from Agent E2E.
+- Expanded PR metadata verified against a real GitHub PR. Native GitLab/tea
+  output still requires completeness checks before contribution intake proceeds.
+
 ## [0.6.16] - 2026-10-29
 
 ### Added

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "skill": {
     "name": "iloop",
-    "version": "0.6.16",
+    "version": "0.6.17",
     "entry": "SKILL.md",
     "requiredPaths": [
       "SKILL.md",
@@ -26,6 +26,7 @@
       "scripts/integration.sh",
       "references/integration.md",
       "references/issue-intake.md",
+      "references/contribution-intake.md",
       "templates/intake.md"
     ]
   },

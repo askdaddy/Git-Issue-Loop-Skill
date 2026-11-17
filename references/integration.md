@@ -4,6 +4,12 @@
 
 判定依据统一见 SKILL.md §2.1。产品已确认 FAIL 与环境/证据不足分开记录，只有全部验收实际 PASS 且无确认越界才交付；纯环境缺口不计 retry。角色/模板不另设 PASS 后直接关闭的快捷路径。
 
+## 贡献详情只读与支持出口
+
+`integration pr-view PR编号` 允许 planner/developer/reviewer 显式角色，只读当前 remote 的贡献详情，不要求 riper/N 或 verified。GitHub 请求正文、评论/审查及仓库/base/head SHA；glab/tea 沿用原生详情，字段/分页不全须暂停。读取失败直接返回失败，不认证内容完整性。外部 PR 按[贡献接入协议](contribution-intake.md)先关联需求、固定贡献快照、保留作者及核验实际交付提交；不将 PR 编号交给 issue 命令。
+
+支持答疑/不采纳等按[接入处置](issue-intake.md#21-支持分诊与处置出口)结束，不套用下面研发 PASS→verified。外部贡献复用原 PR 或另交 riper/N 必须先记录维护者决定；现有原语不支持的贡献分支操作交维护者，不绕行、不自动重复交付。
+
 ## 默认交付
 
 验收 PASS → QA `issue status N riper-verified` → QA 推分支并交付 PR → 回读写回 → QA `issue close N` → 释放认领。
@@ -25,7 +31,8 @@ PR 原语只负责单次平台操作；跨步骤去重、分页、SHA 回读、�
 
 |动作|PM|开发|QA|额外要求|
 |---|---|---|---|---|
-|push / PR list/view/create|禁止|禁止|允许|显式 --role reviewer；只交付验收过的提交|
+|push / PR list/create|禁止|禁止|允许|显式 --role reviewer；只交付验收过的提交|
+|PR view（只读）|允许|允许|允许|显式角色，不授权写贡献分支|
 |本地 --no-ff 合并|禁止|允许|禁止|显式 --role developer；用户明确目标工作区及分支|
 |GitHub Release view/create|禁止|禁止|允许|独立发布授权、全套件通过、固定版本/SHA|
 |PR 合并|禁止自动执行|禁止自动执行|禁止自动执行|由用户处理|

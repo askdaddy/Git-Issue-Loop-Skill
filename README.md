@@ -2,7 +2,7 @@
 
 [简体中文](README_CN.md)
 
-Current stable release: [v0.6.16](https://github.com/askdaddy/Git-Issue-Loop-Skill/releases/tag/v0.6.16). See [CHANGELOG.md](CHANGELOG.md) for release history.
+Current stable release: [v0.6.17](https://github.com/askdaddy/Git-Issue-Loop-Skill/releases/tag/v0.6.17). See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 `iloop` is an Agent Skill for running an issue-driven RIPER engineering loop:
 **Goal registration → Research → Innovation → Plan → Execute → Review**. A plain
@@ -86,7 +86,7 @@ CLIs: `gh`, `glab`, and `tea`.
   merging and publishing. The PR base defaults to the repository default branch;
   `--base <branch>` targets a non-default integration branch. Local-only
   delivery keeps the Issue open.
-- 23 shell invariant suites under `test/`, covering CLI behavior through stubs
+- 24 shell invariant suites under `test/`, covering CLI behavior through stubs
   and contract checks. The intake scenario walkthroughs are protocol reviews,
   not independent Agent end-to-end tests.
 
@@ -108,6 +108,19 @@ records go to the Planner, who verifies the report before changing labels:
 `issue get <N> --strict` stops when a body or comment CLI call fails. It does
 not certify pagination completeness or semantic accuracy. See the
 [intake protocol](references/issue-intake.md) and [record template](templates/intake.md).
+
+Support intake distinguishes questions, configuration/documentation problems, bugs,
+and feature requests. It can answer, wait for information, link a duplicate,
+record a maintainer decline, enter engineering, or associate a contribution.
+Support completion is not engineering verification; support closure requires the
+specific maintainer authorization described in the intake protocol.
+
+Use `/iloop pr N` or `/iloop mr N` for an external contribution. All three roles
+can read it with `integration pr-view N`; GitHub requests expanded metadata,
+while GitLab/tea native output may require additional evidence before proceeding.
+The [contribution protocol](references/contribution-intake.md) covers requirement
+association, author-preserving reuse, fresh acceptance, and avoiding duplicate
+PR delivery. This is a maintainer-invoked workflow, not a background support bot.
 
 ## Runtime feedback
 

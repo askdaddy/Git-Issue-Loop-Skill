@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-当前稳定版：[v0.6.16](https://github.com/askdaddy/Git-Issue-Loop-Skill/releases/tag/v0.6.16)。版本变更见 [CHANGELOG.md](CHANGELOG.md)。
+当前稳定版：[v0.6.17](https://github.com/askdaddy/Git-Issue-Loop-Skill/releases/tag/v0.6.17)。版本变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 `iloop` 是一个面向 Agent 的 Issue 驱动 RIPER 研发闭环 Skill：
 **目标登记（Goal）→ 研究（Research）→ 创新（Innovation）→ 计划（Plan）→ 执行（Execute）→ 审查（Review）**。
@@ -30,7 +30,7 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
 - 运行时反馈：角色操作被拒绝、工作区越界或 Issue 阶段证据缺失时，先纠偏任务，再生成脱敏离线草稿；向维护上游提交须明确授权。
 - 可选的结构化运行输出：`issue priority`、`issue status`、`issue comment`、`guard` 可在调用者预先打开的 fd3 上输出一条 NDJSON 事件（`ILOOP_EVENTS_FD=3`）；并提供区分「脚本观察事实 / Agent 声明 / 未验证」的阶段摘要模板（`templates/run-summary.md`）。默认关闭：不写本地事件日志、不联网，不改变 stdout、stderr 与退出码。契约见[运行时输出](references/runtime-output.md)。
 - QA 通过核验后的 PR 交付，合并与发布另需授权；PR base 默认仓库默认分支，可用 `--base <branch>` 指定非默认集成分支。仅本地交付时 Issue 保持 open。
-- `test/` 下 23 组 shell 不变量测试，覆盖 stub CLI 行为与契约检查；第三方接入场景走查属于协议审阅，不等同于独立 Agent 端到端测试。
+- `test/` 下 24 组 shell 不变量测试，覆盖 stub CLI 行为与契约检查；第三方接入场景走查属于协议审阅，不等同于独立 Agent 端到端测试。
 
 ## 第三方 Issue 接入
 
@@ -41,6 +41,10 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
 3. 回到常规 RIPER 分发。复用有效接入证据，仅复核实质变化；接入记录不替代规格或冻结计划。
 
 `issue get <N> --strict` 在正文或评论的 CLI 调用失败时停止，不保证分页完整或内容语义正确。详见[接入协议](references/issue-intake.md)与[接入记录模板](templates/intake.md)。
+
+接入按内容区分咨询、配置/文档问题、缺陷和需求，提供答疑结束、等待信息、重复关联、不采纳、进入研发、关联贡献等出口。支持结束不等于研发验收通过；支持关闭须满足接入协议规定的维护者明确授权。
+
+外部贡献使用 `/iloop pr N` 或 `/iloop mr N`。三角色可用 `integration pr-view N` 只读；GitHub 获取扩展元数据，GitLab/tea 原生详情缺字段时先暂停补证。[贡献接入协议](references/contribution-intake.md)规定关联需求、保留作者复用代码、重新验收与防重复交付。流程由维护者调用，不是后台客服机器人。
 
 ## 运行时反馈闭环
 
