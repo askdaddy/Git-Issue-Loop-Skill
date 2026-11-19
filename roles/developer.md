@@ -20,6 +20,10 @@
 - 经 `git-ops.sh --role developer` 评论、设置 execute/review/blocked；可创建计划外发现的跟进 Issue，随后交 PM 补优先级，不借新票扩权。
 - 提交到 `riper/N`，提交前 `git-ops.sh --role developer guard developer N`。脚本检查路径，不证明满足计划；归属不明先停，不删除他人文件。
 
+## 思考方法
+
+涉及专业判断或用户显式点名时，按 [思考方法](../references/thinking-methods.md) 读取相关条目；知识缺口仅安排本步所需的最小验证性学习。方法帮助满足冻结 WHAT，不授权新增功能、修订计划或启动持续任务。
+
 ## 阶段动作与产出
 
 1. 输入核验与接入交接完成后对齐 execute，从仍有效的未完成步骤继续。按编号满足每条验收，不跳过或合并需求。

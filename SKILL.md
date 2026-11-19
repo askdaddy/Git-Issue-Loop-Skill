@@ -123,6 +123,12 @@ description: >-
 - **凭据安全**：禁止代用户输入 token，禁止将凭据写入仓库文件、脚本、`.env` 或提交到版本库。
 - **运行环境**：仅支持 macOS 与 Windows。Windows 下 `git-ops.sh` 必须在 Git Bash 中运行（随 Git for Windows 自带），不支持 CMD / PowerShell。macOS 宿主默认 shell 常为 zsh；Agent 执行安装/更新协议等**内联 shell** 时必须用 **bash**（zsh 缺 `shopt` / `nullglob` 等 bash 内建，直接跑会 `command not found`）。随附脚本已带 `#!/usr/bin/env bash`，经 `./script.sh` 调用恒在 bash 下运行、天然安全。
 
+## 阶段思考方法（自动选择与显式点名）
+
+完成原有调用分类和阶段分发后，按 [思考方法](references/thinking-methods.md) 的阶段映射选择相关条目；无需每阶段加载全部方法。默认将分析结果融入现有阶段产物，问题与建议数量按需，不改变原有流程的固定规则。
+
+支持自然语言点名，如「用残酷的批评者检查当前方案」「结合逆向工程师和系统构建者排计划」。点名仅选择视角，不切换角色、阶段或扩张验收；默认限当前请求，多方法合并输出。只有方法名且缺分析对象时先利用当前上下文，仍不明确再澄清，不将方法名当新目标建票。退出、help、buffer 和阶段权限仍按原协议优先处理。完整调用范围及条件见参考文件。
+
 ## 1. 多角色驱动机制（Persona Loading）
 
 **先完成 §3.0.1 启动分发（含第三方接入路由判断），再按分发结果读取对应的一份角色文件。** 禁止为了「看看该不该调研」而预加载 PM。Skill 更新检查、doctor 与 `labels init` 不需要角色。

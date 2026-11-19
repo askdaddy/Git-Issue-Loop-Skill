@@ -27,7 +27,8 @@
       "references/integration.md",
       "references/issue-intake.md",
       "references/contribution-intake.md",
-      "templates/intake.md"
+      "templates/intake.md",
+      "references/thinking-methods.md"
     ]
   },
   "distribution": {
