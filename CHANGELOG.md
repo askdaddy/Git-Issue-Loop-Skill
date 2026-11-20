@@ -4,6 +4,23 @@ All notable changes to stable `iloop` releases are recorded here. Releases use
 immutable `vX.Y.Z` tags; installation follows the highest stable tag rather
 than `main`.
 
+## [0.6.19] - 2026-11-20
+
+### Added
+
+- Ten stage-aware thinking methods with natural-language selection, combined
+  use and scoped preferences. Shared guidance feeds existing roles and stage
+  artifacts without changing permissions or frozen acceptance criteria. (#75)
+- Conditional opportunity discovery, learning and repeatable-system design,
+  with adaptive output sizes instead of fixed quotas or authority claims.
+- The shared thinking-method reference is included in installation validation.
+
+### Validation
+
+- Prompt protocol scenarios cover all ten methods, stage routing, explicit
+  selection, scope conflicts and permission boundaries. This is protocol review,
+  not independent Agent E2E evidence.
+
 ## [0.6.18] - 2026-11-17
 
 ### Fixed
