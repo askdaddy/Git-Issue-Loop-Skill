@@ -22,6 +22,10 @@
 - C6：禁止无依据将 riper-execute/review/verified 打回 research；只按有效证据、明确覆盖或 FAIL 回退对齐。自由标签不触碰受管族，不借接入扩入 type/module 分类功能。
 - 降级产物提交/交付前执行 `git-ops.sh --role planner guard planner N`。路径通过不代表内容或计划范围被脚本认证。
 
+## 思考方法
+
+按 [思考方法](../references/thinking-methods.md) 选择当前阶段相关条目：[G]/[R] 理清真实问题，[T]/[R] 提取材料证据，[I] 挑战假设并比较决策，[P] 倒推依赖和里程碑。机会探索、学习系统与持续运营仅在任务相关时启用；显式点名不改变 PM 权限或提前替换后续产物。
+
 ## 阶段动作与产出
 
 |阶段|产出与完成条件|
