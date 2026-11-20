@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-当前稳定版：[v0.6.18](https://github.com/askdaddy/Git-Issue-Loop-Skill/releases/tag/v0.6.18)。版本变更见 [CHANGELOG.md](CHANGELOG.md)。
+当前稳定版：[v0.6.20](https://github.com/askdaddy/Git-Issue-Loop-Skill/releases/tag/v0.6.20)。版本变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 `iloop` 是一个面向 Agent 的 Issue 驱动 RIPER 研发闭环 Skill：
 **目标登记（Goal）→ 研究（Research）→ 创新（Innovation）→ 计划（Plan）→ 执行（Execute）→ 审查（Review）**。
@@ -22,15 +22,16 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
 - 目标直入：给 `/iloop` 一句目标而非 Issue 编号，Planner 会整理草稿、经确认后创建 Issue 并设优先级，再经分发进入闭环（新建 Issue 会落入研究）。
 - 严格角色分工：Planner 负责规范和计划，Developer 按已批准计划实施，Reviewer 进行黑盒验收。
 - 规格驱动交付：计划是冻结契约；任何计划变更都必须显式退回计划阶段。
+- 十种[阶段思考方法](references/thinking-methods.md)：默认按任务和阶段自动选择，也可显式点名或组合使用，结论融入现有阶段产物；方法选择不扩张角色权限、任务范围或冻结验收。
 - 最少代码梯子（`references/lazy-ladder.md`）约束 HOW：在验收范围内取最短 diff；合法改道须留一行 `skipped:` 评论。
 - 三个互斥的 Issue 标签族——优先级（`p0`–`p3`）、RIPER 状态、重试计数（`riper-retry-1`–`3`）——外加一个受管非排他的认领标签（`riper-claimed`，标记 Issue 已被某会话认领，使并行会话的自动挑选跳过它），合计 15 个内置标签，由 `labels init` 幂等创建；它还会安全迁移仓库级 `P0` 等历史大小写变体所关联的 open/closed Issue，验证成功后再删除变体，失败时保留变体并停止。
 - T0 硬边界：Planner 与 Reviewer 禁改业务代码；提交前 `guard <role>` 会用 `git status` 比对角色可写区域，越界即 `exit 1`。
 - `scripts/git-ops.sh` 根据 `git remote` 自动识别平台、调用官方 CLI、按角色硬性校验 Issue 操作权限，且拒绝改走 REST API 或代填凭据。
 - 面向并行会话的按 Issue 工作区隔离：只有分支不等于隔离——共用一个克隆的会话共享同一个 HEAD 与 index 锁。因此 `workspace start <N>` 会在**仓库外** `../.iloop-worktrees/<repo>/<N>` 建一个真正的 `git worktree`，挂上 `riper/<N>` 分支，基分支恒为 `origin/<默认分支>` 而**不是本地分支**，所以不会继承别的会话尚未推送的提交。`workspace status` 只读报告你在哪个工作树、哪条分支、归属哪个 Issue；`workspace finish <N>` 仅在工作区干净且已合并进上游时才清理，否则拒绝而不是丢弃任何一方；`guard <role> <N>` 会额外校验当前分支是否就是 `riper/<N>`。
-- 运行时反馈：角色操作被拒绝、工作区越界或 Issue 阶段证据缺失时，先纠偏任务，再生成脱敏离线草稿；向维护上游提交须明确授权。
+- 离线纠错反馈：全局队列放在 Skill 安装目录之外，跨会话保留问题；闭环终点或 buffer 挂起/退出时，待上报队列非空才询问，逐条授权后上报。角色操作被拒绝、工作区越界或证据缺失时，仍先纠偏并使用既有有限字段草稿。
 - 可选的结构化运行输出：`issue priority`、`issue status`、`issue comment`、`guard` 可在调用者预先打开的 fd3 上输出一条 NDJSON 事件（`ILOOP_EVENTS_FD=3`）；并提供区分「脚本观察事实 / Agent 声明 / 未验证」的阶段摘要模板（`templates/run-summary.md`）。默认关闭：不写本地事件日志、不联网，不改变 stdout、stderr 与退出码。契约见[运行时输出](references/runtime-output.md)。
 - QA 通过核验后的 PR 交付，合并与发布另需授权；PR base 默认仓库默认分支，可用 `--base <branch>` 指定非默认集成分支。仅本地交付时 Issue 保持 open。
-- `test/` 下 24 组 shell 不变量测试，覆盖 stub CLI 行为与契约检查；第三方接入场景走查属于协议审阅，不等同于独立 Agent 端到端测试。
+- `test/` 下 26 组 shell 不变量测试，覆盖 stub CLI 行为与契约检查；第三方接入场景走查属于协议审阅，不等同于独立 Agent 端到端测试。
 
 ## 第三方 Issue 接入
 
@@ -49,6 +50,8 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
 ## 运行时反馈闭环
 
 角色操作被拒绝、guard 越界或阶段证据缺失时，先纠偏当前任务。`scripts/feedback.sh draft` 仅输出有限字段的离线草稿，不写文件、不自动上报。向维护仓库写入前，Agent 必须脱敏、查重，并取得对本次写入的授权。
+
+`scripts/feedback.sh add|list|show|dismiss|reported` 管理本地纠错队列，默认存于 `~/.agents/iloop-feedback/entries/`，可用 `ILOOP_FEEDBACK_DIR` 覆盖。只收集 bug、协议错误、误导性文档和错误体验，不收功能建议；队列命令离线执行，不代为上报。拒绝的条目进入 dismissed 终态，已上报条目回填 Issue URL。闭环终点或 buffer 挂起/退出时呈报待上报条目，向上游写入前逐条审阅与授权。队列是用户数据，与运行事件日志分开，升级 Skill 时保留。
 
 正向结果包括成功拦截、安全恢复、反馈促成回归修复和误报纠正。修复发布后仍处于“待观察”，有后续运行证据才能标为“已验证”。反馈不替代产品验收，也不自动消耗 QA 重试次数。详见[反馈协议](references/feedback-loop.md)。
 
@@ -92,6 +95,7 @@ QA PASS → `riper-verified` → 推送并核验 PR 交付 → 写回证据 → 
 | `/iloop help` | 仅显示用法与本地版本，不进入闭环，也不激活 buffer。 |
 | `/iloop exit` | 显性退出 buffer，输出交接摘要；不关 Issue、不自动释放认领。 |
 | `排 plan，不要执行` | 在请求范围内推进，计划完成后停止。 |
+| `用决策架构师比较这两个方案` | 在当前阶段与范围内选择对应思考视角。 |
 
 进入 buffer 后，中途回答确认、补充需求或提问都不会退出；回复会从挂起点继续。只有显性退出或新会话才离开。
 
@@ -102,6 +106,8 @@ QA PASS → `riper-verified` → 推送并核验 PR 交付 → 写回证据 → 
 ```
 
 `labels init` 在 GitHub / GitLab 更新已有标签的颜色和描述；tea 路径只跳过已有标签。doctor 仅检查标签名称是否齐全，不证明更新能力可用。glab 1.130.0 的 ID 更新兼容与失败排查见 [CLI 指南](references/cli-setup.md#标签体系初始化)。
+
+自由标签可用 `issue label N add "area/cli"` 添加。包装器先查仓库标签，缺失才补建，已有颜色和描述保持不变；列表读取失败时不会盲目创建，添加成功仍可证明标签已存在。优先级、状态、重试和认领标签继续使用各自专用操作。详见 [CLI 指南](references/cli-setup.md#自由标签补建)。
 
 ## 运行要求
 
@@ -120,16 +126,16 @@ INSTALL.md               Agent 管理的 Git 安装协议
 skill-manifest.json      机器可读的安装契约
 scripts/git-ops.sh       平台路由、Issue 操作与安全约束
 scripts/check-update.sh  对照远端最高稳定 tag 检查已安装 Skill 是否有更新
-scripts/feedback.sh      生成有限字段的离线反馈草稿
+scripts/feedback.sh      离线反馈草稿与全局纠错反馈队列
 scripts/runtime-events.sh 可选的 fd3 NDJSON 运行事件输出
 scripts/integration.sh   由 git-ops.sh 加载的推送、PR、Release 与清理操作
 roles/                   Planner、Developer、Reviewer 的角色说明
 templates/               intake、spec、design、plan、verify-report 与阶段摘要模板
-references/              CLI 配置、第三方接入、反馈、集成、运行时输出与最少代码梯子
-test/                    shell 不变量测试与第三方接入协议走查
+references/              CLI 配置、接入、反馈、集成、运行时输出、思考方法与最少代码梯子
+test/                    shell 不变量测试与人工协议场景走查
 CHANGELOG.md             稳定版本变更记录
 docs/README.md           当前文档入口、维护检查与历史材料说明
-docs/issues/1/          保留的历史自举记录，不是当前规范
+docs/issues/1/           保留的历史自举记录，不是当前规范
 docs/issues/<N>/         新阶段文档仅在远程 Issue 平台不可用时降级写入
 ```
 

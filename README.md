@@ -2,7 +2,7 @@
 
 [简体中文](README_CN.md)
 
-Current stable release: [v0.6.18](https://github.com/askdaddy/Git-Issue-Loop-Skill/releases/tag/v0.6.18). See [CHANGELOG.md](CHANGELOG.md) for release history.
+Current stable release: [v0.6.20](https://github.com/askdaddy/Git-Issue-Loop-Skill/releases/tag/v0.6.20). See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 `iloop` is an Agent Skill for running an issue-driven RIPER engineering loop:
 **Goal registration → Research → Innovation → Plan → Execute → Review**. A plain
@@ -46,6 +46,10 @@ CLIs: `gh`, `glab`, and `tea`.
   implements the approved plan, and Reviewer performs black-box acceptance.
 - Spec-driven delivery: the plan is a frozen contract and changes to it require
   an explicit return to the planning stage.
+- Ten stage-aware [thinking methods](references/thinking-methods.md), selected
+  automatically for the task or explicitly by name. Related findings feed the
+  existing stage artifacts; method selection does not expand role permissions,
+  scope, or frozen acceptance criteria.
 - A minimum-code ladder (`references/lazy-ladder.md`) constraining HOW: take the
   shortest diff that still meets the frozen acceptance criteria, and leave a
   one-line `skipped:` comment for any legitimate detour.
@@ -72,9 +76,11 @@ CLIs: `gh`, `glab`, and `tea`.
   once the work is clean and already merged upstream, and refuses rather than
   discards work otherwise; `guard <role> <N>` additionally verifies that the
   current branch really is `riper/<N>`.
-- Runtime feedback for permission refusals, workspace violations, and missing
-  Issue evidence: correct the task, prepare a redacted offline draft, and submit
-  to maintainers only with explicit authorization.
+- Offline correction-only feedback: keep a cross-session queue outside the
+  Skill installation, ask about reporting at loop completion / buffer suspend /
+  exit when entries are pending, and submit only after per-entry authorization.
+  Permission refusals, workspace violations, and missing Issue evidence also
+  retain the existing limited-field draft workflow.
 - Optional structured runtime output: `issue priority`, `issue status`,
   `issue comment`, and `guard` emit one NDJSON event on a caller-opened fd 3
   (`ILOOP_EVENTS_FD=3`), plus a provenance-aware stage summary template
@@ -129,6 +135,16 @@ trigger task correction. `scripts/feedback.sh draft` produces a limited-field,
 offline draft; it does not write files or submit a report. Before writing to the
 maintainer repository, the Agent must redact the content, check duplicates, and
 obtain authorization for that write.
+
+`scripts/feedback.sh add|list|show|dismiss|reported` manages a local,
+correction-only queue at `~/.agents/iloop-feedback/entries/` (override with
+`ILOOP_FEEDBACK_DIR`). It stores bugs, protocol errors, misleading documentation,
+and incorrect behavior; feature suggestions are outside this queue. Queue
+commands stay offline and do not submit reports. Dismissed entries are terminal;
+reported entries retain their Issue URL. Pending entries are presented at loop
+completion or buffer suspend / exit, with per-entry review and authorization
+before upstream writes. This user-data queue is separate from runtime event logs
+and survives Skill upgrades.
 
 Positive results include successful interception, safe recovery, regression
 fixes, and corrected false positives. A published fix stays “awaiting observation”
@@ -199,6 +215,7 @@ Common invocations:
 | `/iloop help` | Show usage and the installed version; stop without entering the loop or activating the buffer. |
 | `/iloop exit` | Leave the buffer explicitly and print a handoff summary; keep the Issue open and the claim held. |
 | `Plan only; do not execute` | Stop after planning, within the requested scope. |
+| `Use the decision architect to compare these options` | Select the named thinking method within the current stage and scope. |
 
 Once in the buffer, answering a confirmation, adding scope, or asking a side
 question does not exit; the reply resumes the suspended step. Only an explicit
@@ -214,6 +231,13 @@ For existing labels, `labels init` updates colors and descriptions on GitHub and
 GitLab; the tea path skips existing labels. Doctor checks label names only, so
 passing it does not establish that updates work. See the [CLI guide](references/cli-setup.md)
 for glab 1.130.0 ID-based updates and failure diagnosis.
+
+Free labels can be added with `issue label N add "area/cli"`. The wrapper checks
+for an existing repository label and creates it only when missing, preserving
+existing colors and descriptions. A failed list read does not trigger blind
+creation; assignment success can still confirm that a label exists. Priority,
+status, retry, and claim labels retain their dedicated operations. See the
+[CLI guide](references/cli-setup.md#自由标签补建).
 
 ## Requirements
 
@@ -236,16 +260,16 @@ INSTALL.md               Agent-managed Git installation protocol
 skill-manifest.json      Machine-readable installation contract
 scripts/git-ops.sh       Platform routing, Issue operations, and safeguards
 scripts/check-update.sh  Compares the installed Skill against the highest stable tag
-scripts/feedback.sh      Generates offline, limited-field feedback drafts
+scripts/feedback.sh      Offline drafts and the global correction-only feedback queue
 scripts/runtime-events.sh Opt-in NDJSON runtime events written to fd 3
 scripts/integration.sh   Push, PR, Release, and cleanup operations loaded by git-ops.sh
 roles/                   Planner, Developer, and Reviewer role instructions
 templates/               Intake, spec, design, plan, verification-report, and run-summary templates
-references/              CLI setup, intake, feedback, integration, runtime output, minimum-code ladder
-test/                    Shell invariant suites and intake protocol walkthroughs
+references/              CLI setup, intake, feedback, integration, runtime output, thinking methods, minimum-code ladder
+test/                    Shell invariant suites and human-reviewed protocol scenarios
 CHANGELOG.md             Stable-release change history
 docs/README.md           Documentation map, maintenance checks, and historical context
-docs/issues/1/          Retained historical bootstrap records, not current rules
+docs/issues/1/           Retained historical bootstrap records, not current rules
 docs/issues/<N>/         New stage documents only when the remote Issue platform
                          is unavailable
 ```

@@ -171,3 +171,11 @@ Token 获取：Gitea/Forgejo → Settings → Applications → **Generate New To
 3. **禁止代用户输入凭据**，禁止把 token 写入仓库文件、脚本、`.env` 或提交到版本库。
 4. 用户确认完成后，重新执行 `./scripts/git-ops.sh doctor` 验证，通过后再从中断的阶段继续。
 5. 若用户明确表示"暂不配置 CLI"，则本轮循环终止，已在本地 `docs/issues/<N>/` 产出的文档保留，Issue 侧写回动作留待 CLI 就绪后补做。
+
+## 自由标签补建
+
+经有权角色调用 `git-ops.sh --role <角色> issue label <N> add "<自由标签>"` 时，GitHub、GitLab、Gitea / Forgejo 均先检查仓库级标签；缺失才创建，已有标签不改颜色和描述。新建自由标签使用中性色：gh/tea 为 `ededed`，glab 为 `#ededed`。
+
+列表读取失败时不盲目创建。创建失败后仍尝试添加：若添加成功，说明标签实际存在（例如并发创建或列表未覆盖）；两步都失败时返回非零并报告创建前置错误与添加失败。优先级、状态、重试与认领受管族不通过该路径补建，继续使用专用命令。
+
+以上行为有 stub CLI 回归覆盖；真实 gh/glab/tea 网络环境及版本差异仍须按实际 CLI 输出核验，不能以测试夹具代替平台实测。
