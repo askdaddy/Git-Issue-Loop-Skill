@@ -17,6 +17,50 @@ than `main`.
   requests stay out (category enum is protocol-level rejection). All queue subcommands remain
   offline with allowlist fields only.
 
+## [0.6.19] - 2026-11-20
+
+### Added
+
+- Ten stage-aware thinking methods with natural-language selection, combined
+  use and scoped preferences. Shared guidance feeds existing roles and stage
+  artifacts without changing permissions or frozen acceptance criteria. (#75)
+- Conditional opportunity discovery, learning and repeatable-system design,
+  with adaptive output sizes instead of fixed quotas or authority claims.
+- The shared thinking-method reference is included in installation validation.
+
+### Validation
+
+- Prompt protocol scenarios cover all ten methods, stage routing, explicit
+  selection, scope conflicts and permission boundaries. This is protocol review,
+  not independent Agent E2E evidence.
+
+## [0.6.18] - 2026-11-17
+
+### Fixed
+
+- GitLab label initialization resolves exact label names to numeric IDs before
+  updating with `glab label edit --label-id` (glab 1.130.0). Lookup paginates,
+  invalid or ambiguous IDs stop updates, and CLI failure details are preserved
+  instead of reporting all failures as permission problems.
+
+## [0.6.17] - 2026-11-17
+
+### Added
+
+- Support dispositions for external reports, with explicit authorization for
+  support closure, resumable evidence and no forced engineering loop. (#73)
+- External PR/MR intake with requirement association, attributed code reuse,
+  fresh acceptance and an explicit original-versus-replacement delivery decision.
+- Read-only `integration pr-view` for all three roles; GitHub requests expanded
+  contribution metadata. Other platforms retain native detail completeness gates.
+
+### Validation
+
+- All 24 shell invariant suites pass, including contribution-read role/routing
+  fixtures; support/contribution scenarios reviewed separately from Agent E2E.
+- Expanded PR metadata verified against a real GitHub PR. Native GitLab/tea
+  output still requires completeness checks before contribution intake proceeds.
+
 ## [0.6.16] - 2026-10-29
 
 ### Added

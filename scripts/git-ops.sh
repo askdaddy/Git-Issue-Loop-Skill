@@ -112,7 +112,7 @@ Commands:
   git-ops.sh workspace status                       报告工作区隔离状态（主/linked、分支、归属 Issue、worktree 清单）
   git-ops.sh workspace start <num> [--base <ref>]   为 Issue <num> 建立隔离工作区（仓库外 worktree + riper/<num> 分支，基于上游）
   git-ops.sh workspace finish <num>                 清理 Issue <num> 的本地工作区（仅干净且已合并进上游时；不含推送/合并）
-  git-ops.sh integration push|pr-view <N>              QA 集成原语（pr-view 参数为 PR 编号）
+  git-ops.sh integration push|pr-view <N>              push 仅 QA；pr-view 三角色只读，参数为 PR 编号
   git-ops.sh integration pr-list <N> [--base <branch>]  查同 base/head 的 PR；base 默认仓库默认分支
   git-ops.sh integration pr-create <N> <title> <body-file> [--base <branch>]  创建 PR；base 默认仓库默认分支
   git-ops.sh integration local <N> <target-branch>    开发显式本地降级；仅 linked worktree，保持 open
@@ -830,6 +830,32 @@ cmd_issue_comment() {
 # 标签底层操作（各平台原生命令）
 # ---------------------------------------------------------------------------
 
+# 使用 glab 内置 jq 精确匹配名称，不依赖外部 JSON 解析器；逐页查询避免漏掉后续标签。
+# 查询失败或 ID 无效时关闭更新路径，不能将权限/网络/解析错误当成「标签不存在」。
+raw_glab_label_id() {
+  local name="$1" page=1 rows ids
+  while :; do
+    if ! rows="$(glab label list --output json --per-page 100 --page "${page}" \
+        --jq '.[] | [.id, .name] | @tsv')"; then
+      log_error "glab 查询标签 '${name}' 的 ID 失败（第 ${page} 页）。"
+      return 1
+    fi
+    [[ -n "${rows}" ]] || break
+    ids="$(printf '%s\n' "${rows}" | awk -F '\t' -v name="${name}" '$2 == name {print $1}')"
+    if [[ -n "${ids}" ]]; then
+      if [[ ! "${ids}" =~ ^[1-9][0-9]*$ ]]; then
+        log_error "glab 标签 '${name}' 的 ID 无效或不唯一。"
+        return 1
+      fi
+      printf '%s' "${ids}"
+      return 0
+    fi
+    page=$((page + 1))
+  done
+  log_error "glab 未找到名称精确匹配的标签 '${name}'。"
+  return 1
+}
+
 # 在仓库中创建标签（幂等）：不存在则创建，已存在则更新颜色与描述，两者均不报错。
 # 用法：raw_label_create <名称> <颜色(6位hex，不带#)> <描述>
 # 输出：向 stdout 打印 created / updated（供上层汇总）；两者均失败时 return 1。
@@ -852,14 +878,21 @@ raw_label_create() {
       ;;
     glab)
       require_cli glab
-      # glab 的 --color 需带 # 前缀；新版 glab（>=1.118）要求 --name，旧版接受位置参数，故两者都试
-      if glab label create --name "${name}" --color "#${color}" --description "${desc}" >/dev/null 2>&1 \
-         || glab label create "${name}" --color "#${color}" --description "${desc}" >/dev/null 2>&1; then
+      # create 的名称参数有版本差异；edit 则要求数字 ID，不能复用 create 的语法。
+      local create_error legacy_error label_id
+      if create_error="$(glab label create --name "${name}" --color "#${color}" --description "${desc}" 2>&1)" \
+         || legacy_error="$(glab label create "${name}" --color "#${color}" --description "${desc}" 2>&1)"; then
         printf 'created'
-      elif glab label edit --name "${name}" --color "#${color}" --description "${desc}" >/dev/null 2>&1 \
-         || glab label edit "${name}" --color "#${color}" --description "${desc}" >/dev/null 2>&1; then
-        printf 'updated'
+      elif label_id="$(raw_glab_label_id "${name}")"; then
+        if glab label edit --label-id "${label_id}" --color "#${color}" --description "${desc}" >&2; then
+          printf 'updated'
+        else
+          log_error "glab 更新标签 '${name}'（ID ${label_id}）失败。"
+          return 1
+        fi
       else
+        log_error "glab 无法创建或定位标签 '${name}'；创建命令详情："
+        printf '%s\n%s\n' "${create_error}" "${legacy_error}" >&2
         return 1
       fi
       ;;
@@ -998,34 +1031,100 @@ clear_issue_family() {
   log_info "已清空 ${family} 族标签（回读确认，无关标签未写入）。"
 }
 
-# 给 Issue 添加标签
-raw_label_add() {
-  local num="$1" label="$2"
-  local __plat
-  __plat="$(detect_platform)" || exit 1
+# 确保仓库级自由标签存在（create-only）。已存在时不创建、也不改写其颜色/描述。
+# 返回：0 = 标签已存在或本次创建成功；1 = 无法确认存在（原因写入 ILOOP_LABEL_ENSURE_ERR）。
+# 设计取舍（Issue #26）：
+#   - 读取标签列表失败即 fail-closed，绝不把「读不到」当成「不存在」去盲目建标签。
+#   - 查重前置：Gitea 对非 scoped 名称不查重，无条件 create 会翻倍制造同名标签。
+#   - create 失败不在此处打印致命错误，交由调用方在 add 之后判定
+#     （覆盖列取上限未命中与并发已创建两种竞态：add 成功即说明标签实为存在）。
+raw_label_ensure() {
+  local label="$1" names="" err="" __plat
+  ILOOP_LABEL_ENSURE_ERR=""
+  __plat="$(detect_platform)" || return 1
+  if ! names="$(raw_label_names)"; then
+    ILOOP_LABEL_ENSURE_ERR="无法读取仓库标签列表，未创建 '${label}'"
+    return 1
+  fi
+  # 大小写不敏感：GitHub 标签名本身大小写不敏感，避免造出近似重复标签。
+  if printf '%s\n' "${names}" | grep -Fixq -- "${label}"; then
+    return 0
+  fi
+  # 受管族保护（C1）：check_permission 只拦小写规范名，这里再拦 P0/P1、RIPER-PLAN 之类
+  # 大小写变体，确保本函数不为优先级/状态/重试/认领族打开新的创建路径。
+  # 只在「缺失 → 即将创建」时拦截：已存在的同名标签仍按原行为放行 add，不改变既有语义。
+  local lc
+  lc="$(printf '%s' "${label}" | tr '[:upper:]' '[:lower:]')"
+  if is_priority_label "${lc}" || is_status_label "${lc}" \
+     || is_retry_label "${lc}" || is_claim_label "${lc}"; then
+    ILOOP_LABEL_ENSURE_ERR="'${label}' 属于受管标签族，只能经 issue priority/status/retry/claim 操作，不自动创建"
+    return 1
+  fi
   case "${__plat}" in
     gh)
       require_cli gh
-      gh issue edit "${num}" --add-label "${label}" >/dev/null
+      if ! err="$(gh label create "${label}" --color ededed 2>&1 >/dev/null)"; then
+        ILOOP_LABEL_ENSURE_ERR="gh label create 失败：${err}"
+        return 1
+      fi
+      ;;
+    glab)
+      require_cli glab
+      # glab 的 --color 需带 # 前缀；新版要求 --name、旧版接受位置参数，故两者都试
+      if ! err="$(glab label create --name "${label}" --color "#ededed" 2>&1 >/dev/null)" \
+         && ! err="$(glab label create "${label}" --color "#ededed" 2>&1 >/dev/null)"; then
+        ILOOP_LABEL_ENSURE_ERR="glab label create 失败：${err}"
+        return 1
+      fi
+      ;;
+    tea)
+      require_cli tea
+      # tea 0.15.x 无 label edit 能力；--color 必填（缺省会报 invalid color format）
+      if ! err="$(tea_cmd labels create --name "${label}" --color ededed 2>&1 >/dev/null)"; then
+        ILOOP_LABEL_ENSURE_ERR="tea labels create 失败：${err}"
+        return 1
+      fi
+      ;;
+    *) return 1 ;;
+  esac
+  return 0
+}
+
+# 给 Issue 添加标签
+# 自由标签可能尚未存在：添加前先经 raw_label_ensure 查重并补建（对齐 §1.2(5) 承诺）。
+# 四族保护不在此处：调用方 check_permission 已拦截优先级/状态/重试/认领，
+# 本函数不得为它们提供任何新的创建路径。
+raw_label_add() {
+  local num="$1" label="$2" ensure_rc=0 add_rc=0
+  local __plat
+  __plat="$(detect_platform)" || exit 1
+  # ensure 失败不立即中止：由下方 add 的结果最终判定（见 raw_label_ensure 注释）。
+  raw_label_ensure "${label}" || ensure_rc=$?
+  case "${__plat}" in
+    gh)
+      require_cli gh
+      gh issue edit "${num}" --add-label "${label}" >/dev/null || add_rc=$?
       ;;
     glab)
       require_cli glab
       glab issue update "${num}" --label "${label}" >/dev/null 2>/dev/null \
-        || glab issue label "${num}" "${label}" >/dev/null # 新旧版本 glab 兼容
+        || glab issue label "${num}" "${label}" >/dev/null 2>/dev/null || add_rc=$? # 新旧版本 glab 兼容
       ;;
     tea)
       require_cli tea
-      # tea 0.15.1 无 labels add 子命令，打标签走 issues edit --add-labels；
-      # 自由标签可能尚未存在：仅在缺失时创建（Gitea 对非 scoped 名称不查重，
-      # 无条件 create 会翻倍制造同名标签），需带 --color
-      if ! tea_cmd labels list 2>/dev/null \
-            | awk -F'│' '{gsub(/^[[:space:]]+|[[:space:]]+$/,"",$4); print $4}' \
-            | grep -Fxq -- "${label}"; then
-        tea_cmd labels create --name "${label}" --color ededed >/dev/null 2>&1 || true
-      fi
-      tea_cmd issues edit "${num}" --add-labels "${label}" >/dev/null
+      # tea 0.15.1 无 labels add 子命令，打标签走 issues edit --add-labels
+      tea_cmd issues edit "${num}" --add-labels "${label}" >/dev/null 2>/dev/null || add_rc=$?
       ;;
   esac
+  if [[ "${add_rc}" -ne 0 ]]; then
+    if [[ "${ensure_rc}" -ne 0 ]]; then
+      log_error "添加标签 '${label}' 失败（add 退出码 ${add_rc}），且创建前置未成功：${ILOOP_LABEL_ENSURE_ERR:-原因未知}"
+    else
+      log_error "添加标签 '${label}' 失败（add 退出码 ${add_rc}；标签已存在，请检查权限或 Issue 状态）"
+    fi
+    _iloop_evt_mark "failed" "unknown" "add-failed" "unknown"
+    return "${add_rc}"
+  fi
 }
 
 # 移除 Issue 标签（尽力而为：目标标签不存在时不报错）
@@ -1678,7 +1777,7 @@ cmd_labels_init() {
       ok=$((ok + 1))
     else
       printf '  %-8s %-18s\n' "FAILED" "${l}"
-      log_error "标签 '${l}' 创建/更新失败（检查 CLI 权限：GitHub 需 repo scope）。"
+      log_error "标签 '${l}' 创建/更新失败；不能仅据此判定为权限问题，请结合 CLI 详情诊断。"
       fail=$((fail + 1))
     fi
   done

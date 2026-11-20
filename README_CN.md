@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-当前稳定版：[v0.6.16](https://github.com/askdaddy/Git-Issue-Loop-Skill/releases/tag/v0.6.16)。版本变更见 [CHANGELOG.md](CHANGELOG.md)。
+当前稳定版：[v0.6.18](https://github.com/askdaddy/Git-Issue-Loop-Skill/releases/tag/v0.6.18)。版本变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 `iloop` 是一个面向 Agent 的 Issue 驱动 RIPER 研发闭环 Skill：
 **目标登记（Goal）→ 研究（Research）→ 创新（Innovation）→ 计划（Plan）→ 执行（Execute）→ 审查（Review）**。
@@ -41,6 +41,10 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
 3. 回到常规 RIPER 分发。复用有效接入证据，仅复核实质变化；接入记录不替代规格或冻结计划。
 
 `issue get <N> --strict` 在正文或评论的 CLI 调用失败时停止，不保证分页完整或内容语义正确。详见[接入协议](references/issue-intake.md)与[接入记录模板](templates/intake.md)。
+
+接入按内容区分咨询、配置/文档问题、缺陷和需求，提供答疑结束、等待信息、重复关联、不采纳、进入研发、关联贡献等出口。支持结束不等于研发验收通过；支持关闭须满足接入协议规定的维护者明确授权。
+
+外部贡献使用 `/iloop pr N` 或 `/iloop mr N`。三角色可用 `integration pr-view N` 只读；GitHub 获取扩展元数据，GitLab/tea 原生详情缺字段时先暂停补证。[贡献接入协议](references/contribution-intake.md)规定关联需求、保留作者复用代码、重新验收与防重复交付。流程由维护者调用，不是后台客服机器人。
 
 ## 运行时反馈闭环
 
@@ -97,6 +101,8 @@ QA PASS → `riper-verified` → 推送并核验 PR 交付 → 写回证据 → 
 ~/.agents/skills/iloop/scripts/git-ops.sh labels init
 ```
 
+`labels init` 在 GitHub / GitLab 更新已有标签的颜色和描述；tea 路径只跳过已有标签。doctor 仅检查标签名称是否齐全，不证明更新能力可用。glab 1.130.0 的 ID 更新兼容与失败排查见 [CLI 指南](references/cli-setup.md#标签体系初始化)。
+
 ## 运行要求
 
 - Git，以及会从 `~/.agents/skills/` 加载 Skill 的 Agent 宿主。
@@ -116,13 +122,20 @@ scripts/git-ops.sh       平台路由、Issue 操作与安全约束
 scripts/check-update.sh  对照远端最高稳定 tag 检查已安装 Skill 是否有更新
 scripts/feedback.sh      生成有限字段的离线反馈草稿
 scripts/runtime-events.sh 可选的 fd3 NDJSON 运行事件输出
+scripts/integration.sh   由 git-ops.sh 加载的推送、PR、Release 与清理操作
 roles/                   Planner、Developer、Reviewer 的角色说明
 templates/               intake、spec、design、plan、verify-report 与阶段摘要模板
 references/              CLI 配置、第三方接入、反馈、集成、运行时输出与最少代码梯子
 test/                    shell 不变量测试与第三方接入协议走查
 CHANGELOG.md             稳定版本变更记录
-docs/issues/<N>/         降级落盘的阶段文档，仅当远程 Issue 平台不可用时写入
+docs/README.md           当前文档入口、维护检查与历史材料说明
+docs/issues/1/          保留的历史自举记录，不是当前规范
+docs/issues/<N>/         新阶段文档仅在远程 Issue 平台不可用时降级写入
 ```
+
+## 项目维护
+
+本仓库是静态 Skill 与 Bash 脚本，没有 Node 依赖安装或打包步骤。文档导航、全套测试命令及历史材料边界见 [docs/README.md](docs/README.md)。文档、脚本行为和发布版本应分别按其拥有的源文件核对；历史 Issue 计划不作为当前规范。
 
 ## 稳定版发布约定
 

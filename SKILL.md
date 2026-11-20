@@ -34,6 +34,8 @@ description: >-
 自动挑选**不直接开工**：Agent 必须先呈报「候选 + 选择理由 + 跳过项及原因」，经用户确认（或改选）后才加载角色进入该 Issue 的闭环（见 §3.0.1 第 0 层）。用户已给出编号、目标或阶段意图时，显式入口优先于自动挑选。
 容错：若用户在 `/iloop` 后直接带了编号或阶段意图（如 `/iloop 42`、"只排 plan"），直接采用，不再追问该项。
 
+**外部贡献入口**：`/iloop pr N` / `/iloop mr N` 明确表示 PR/MR 编号，按 [贡献接入协议](references/contribution-intake.md) 分发 PM 只读查证与关联需求；不把 N 当 Issue，不直接实现或写受管标签。仅数字仍按 Issue 入口。无关联 Issue 时挂起目标可写 `pending(pr N)` / `pending(mr N)`，其余 buffer 恢复/退出规则相同；恢复先 pr-view，关联后使用 Issue 编号。
+
 **help 子命令（终止型，优先识别）**：`/iloop help`（等价 `/iloop --help`、`/iloop -h`，或自然语言「帮助 / 用法 / 怎么用 / 什么版本」）命中后**只输出「精简用法速览 + 本地版本号」随即停止**——**不**加载任何 `roles/*.md`、**不**跑 doctor / `labels init`、**不**进入 RIPER 循环、**不**改 Issue 状态、**不**写评论、**不**建 Issue；纯本地即可应答，**不依赖 doctor / CLI 授权**。help 意图**优先于「一句新目标」识别**（见 §3.0.1 第 0 层），杜绝把 “help” 当成目标去 [G] 建 Issue。help 不激活 buffer；buffer 已激活时，help 只终止本轮应答并保持挂起态，不清空 buffer、不改 Issue。
 
 - **输出（精简速览五要素，一屏可读）**：①**定位**（Issue 驱动的 RIPER 研发闭环）②**调用入口**（`/iloop` + 自然语言触发）③**RIPER 六阶段**（[G] 目标登记 → [R] 研究 → [I] 创新 → [P] 计划 → [E] 执行 → [R] 审查）④**三角色**（PM=planner / 开发=developer / QA=reviewer）⑤**版本号**。
@@ -123,6 +125,12 @@ description: >-
 - **凭据安全**：禁止代用户输入 token，禁止将凭据写入仓库文件、脚本、`.env` 或提交到版本库。
 - **运行环境**：仅支持 macOS 与 Windows。Windows 下 `git-ops.sh` 必须在 Git Bash 中运行（随 Git for Windows 自带），不支持 CMD / PowerShell。macOS 宿主默认 shell 常为 zsh；Agent 执行安装/更新协议等**内联 shell** 时必须用 **bash**（zsh 缺 `shopt` / `nullglob` 等 bash 内建，直接跑会 `command not found`）。随附脚本已带 `#!/usr/bin/env bash`，经 `./script.sh` 调用恒在 bash 下运行、天然安全。
 
+## 阶段思考方法（自动选择与显式点名）
+
+完成原有调用分类和阶段分发后，按 [思考方法](references/thinking-methods.md) 的阶段映射选择相关条目；无需每阶段加载全部方法。默认将分析结果融入现有阶段产物，问题与建议数量按需，不改变原有流程的固定规则。
+
+支持自然语言点名，如「用残酷的批评者检查当前方案」「结合逆向工程师和系统构建者排计划」。点名仅选择视角，不切换角色、阶段或扩张验收；默认限当前请求，多方法合并输出。只有方法名且缺分析对象时先利用当前上下文，仍不明确再澄清，不将方法名当新目标建票。退出、help、buffer 和阶段权限仍按原协议优先处理。完整调用范围及条件见参考文件。
+
 ## 1. 多角色驱动机制（Persona Loading）
 
 **先完成 §3.0.1 启动分发（含第三方接入路由判断），再按分发结果读取对应的一份角色文件。** 禁止为了「看看该不该调研」而预加载 PM。Skill 更新检查、doctor 与 `labels init` 不需要角色。
@@ -153,10 +161,11 @@ description: >-
 |------|--------------|------------------|---------------|
 | 创建 Issue | ✅ | ✅（仅限登记计划外发现） | ✅ |
 | 评论 Issue | ✅ | ✅ | ✅ |
-| 关闭 Issue | ✅（仅限无效/重复/被取代） | ❌ | ✅（闭环终点关闭权） |
+| 关闭 Issue | ✅（无效/重复/被取代；支持关闭见接入协议） | ❌ | ✅（闭环终点关闭权） |
 | 重开 Issue | ✅ | ❌ | ✅（仅纠正误关） |
 | 设置优先级 | ✅ | ❌ | ❌ |
-| push / PR / Release 元数据 | ❌ | ❌ | ✅（按集成契约） |
+| push / PR 写入 / Release 元数据 | ❌ | ❌ | ✅（按集成契约） |
+| PR/MR 详情只读 pr-view | ✅ | ✅ | ✅ |
 | 本地降级合并 | ❌ | ✅（用户显式指定目标） | ❌ |
 | PR 自动合并 | ❌ | ❌ | ❌ |
 | 工作区清理 | 环境能力保留 | 环境能力保留 | 收尾负责（已进上游） |
@@ -289,6 +298,7 @@ doctor / `labels init` 通过后、加载任何角色之前执行。本层是协
 | 显性退出（`/iloop exit`、`/iloop stop`、`退出 iloop`、`结束 iloop`、`exit iloop`） | 按 buffer 退出协议输出交接摘要后停止：不改 Issue 状态、不自动关闭、不自动释放认领 |
 | help / 用法 / 版本（`/iloop help`、`--help`、`-h`、「帮助 / 用法 / 怎么用 / 什么版本」） | 输出精简用法速览 + 本地版本号后**停止**：不加载角色、不进 RIPER 循环、不改 Issue 状态 |
 | 一句新目标（无 Issue 编号） | §3.1 `[G]`，然后加载 PM |
+| 明确 pr N / mr N / 贡献 PR URL | 按贡献接入协议分发 PM；确认仓库与目标类型，不传入 Issue 命令 |
 | 编号 /「落地 #N」 | 对该 N 进入第 1 层 |
 | 「推进迭代」 | 列出 open Issue（p0→p3），对**每个**进入第 1 层 |
 | 「只验收 / 只排 plan / 重做研究」等口头覆盖 | 记录覆盖项，再进入第 1 层（覆盖优先于标签，须先说明对状态的影响） |
@@ -325,7 +335,7 @@ doctor / `labels init` 通过后、加载任何角色之前执行。本层是协
 
 PM 按 templates/intake.md 先查证、评论待确认问题/标签建议，再写前重读、按权限最小修正 labels、写后回读。接入自身不改业务代码；未查清或读取/修标签失败则暂停；不能用接入重置合法阶段、retry、claim。PM 不得设置超出其权限的状态，有权角色交接完成前不得开始业务工作。已完成且无实质变化时复用，不重复调查。
 
-接入完成回到本层按下面证据规则分发；Research 引用接入证据只补缺口。`[T]` 没有新状态标签，不替代研究/冻结计划；详情、字段、并发及 #37 能力边界均见接入协议。裸入口仅对用户已确认目标执行本段，显式编号共用本段。
+接入须先按[支持处置出口](references/issue-intake.md#21-支持分诊与处置出口)确定 disposition；仅 engineering 接入完成回到本层按下面证据规则分发；answered/needs-info/duplicate/declined/linked-pr 按各自条件停止、等待或交接，不因默认 full 强制进入开发。Research 引用接入证据只补缺口。`[T]` 没有新状态标签，不替代研究/冻结计划；详情、字段、并发及 #37 能力边界均见接入协议。裸入口仅对用户已确认目标执行本段，显式编号共用本段。
 
 
 **有效性核验**：标题标记只定位候选；按评论时间与明确修订关系找到当前基线，检查所属 Issue、原始需求/验收范围、内容完整性、待解问题、计划冻结记录与代码基线适用性。新评论不自动取代旧基线；相互冲突或无法确定有效版本时暂停澄清，不把标题、空模板、旧 PASS 当有效证据。
@@ -454,7 +464,7 @@ Issue(编号 N)
 
 ### 3.7 状态判定（Loop Control）
 
-集成原语：`git-ops.sh --role reviewer integration push|pr-list|pr-view|pr-create|release-view|release-create`；`pr-list` / `pr-create` 可带 `--base <branch>` 指定非默认集成分支（省略用默认分支；base 必须在 `origin` 上存在且不等于源分支）。本地降级仅 developer 的 `integration local`。参数和矩阵见 [集成与发布](references/integration.md)。发布需独立授权且 tag + GitHub Release 两部分完成，不能随 Issue 自动发布。
+PR 详情只读 `integration pr-view PR编号` 允许三角色；外部贡献按[贡献接入协议](references/contribution-intake.md)，不混同 Issue 编号。其余集成原语：`git-ops.sh --role reviewer integration push|pr-list|pr-view|pr-create|release-view|release-create`；`pr-list` / `pr-create` 可带 `--base <branch>` 指定非默认集成分支（省略用默认分支；base 必须在 `origin` 上存在且不等于源分支）。本地降级仅 developer 的 `integration local`。参数和矩阵见 [集成与发布](references/integration.md)。发布需独立授权且 tag + GitHub Release 两部分完成，不能随 Issue 自动发布。
 
 - **全部 PASS**：
   1. `./scripts/git-ops.sh --role reviewer issue status <N> riper-verified`；
@@ -500,6 +510,7 @@ Agent 在启动/分发、阶段交接、暂停、恢复、结束时按 [阶段�
 /iloop                        → 自动挑选：doctor 自检后按 p0→p3（同键编号升序）挑出最该处理的 1 个 open Issue，呈报候选/理由/跳过项待用户确认，再按 §3.0.1 第 1 层推进该单完整闭环
 /iloop help                   → 输出技能用法（精简速览）+ 版本号（Skill 根 git describe），随即终止：不加载角色、不进循环；不激活 buffer
 /iloop exit                   → 显性退出 buffer（等价 /iloop stop、退出 iloop、结束 iloop）：输出交接摘要后恢复正常会话，不关 Issue、不自动释放认领
+/iloop pr 123 / /iloop mr 123 → 外部贡献只读查证与关联需求，不将贡献编号当 Issue
 /iloop 我要实现 XXX            → 目标直入：[G] 登记（草稿经确认后建 Issue 并设优先级）→ 分发后落入 [R] 再闭环
 "从零做一个 X" / "新目标：X"    → 同上：从目标创建 Issue 后经分发进入循环
 "落地 issue #42"              → doctor 后经 §3.0.1 按 #42 当前状态 0 帧切入对应角色与阶段

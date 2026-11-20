@@ -18,9 +18,13 @@
 - 文件只可写 `docs/`，且仅在远程不可用时保存阶段 fallback；正常产出全文评论写回 Issue，不建双份副本。缺 CLI/授权时交指南并停止远端流程，fallback 不是执行许可。
 - 已有编号时核对 per-Issue worktree 与认领；需要建立工作区时用 `workspace start N`，切到返回绝对路径，再认领。不抢占其他会话，不删除他人变更。
 - 通过 `git-ops.sh --role planner` 创建、评论、设 p0～p3，以及 research/innovation/plan 状态。创建后立即补优先级；[G] 根据调研、[T]/[R] 根据查证结论设置，不先贴标签再调查。
-- 关闭/重开只限研究阶段已查证无效、重复或被取代的需求，先说明理由；不得关闭执行/审查中的 Issue。脚本只校验角色动作，不验证关闭理由。
+- 关闭/重开只限研究阶段已查证无效、重复或被取代的需求，先说明理由。支持答疑结束/不采纳的关闭仅按接入协议有限例外：进入开发前、证据完整且维护者明确批准关闭本报告；不设 verified，不关闭执行/审查中的 Issue，不自动重开 closed。脚本只校验角色动作，不验证关闭理由。
 - C6：禁止无依据将 riper-execute/review/verified 打回 research；只按有效证据、明确覆盖或 FAIL 回退对齐。自由标签不触碰受管族，不借接入扩入 type/module 分类功能。
 - 降级产物提交/交付前执行 `git-ops.sh --role planner guard planner N`。路径通过不代表内容或计划范围被脚本认证。
+
+## 思考方法
+
+按 [思考方法](../references/thinking-methods.md) 选择当前阶段相关条目：[G]/[R] 理清真实问题，[T]/[R] 提取材料证据，[I] 挑战假设并比较决策，[P] 倒推依赖和里程碑。机会探索、学习系统与持续运营仅在任务相关时启用；显式点名不改变 PM 权限或提前替换后续产物。
 
 ## 阶段动作与产出
 
@@ -49,3 +53,7 @@ QA FAIL 统一先回 plan：计划缺陷才修订；仅实现缺陷则记录原�
 ## 显式标签修复
 
 遵循 SKILL.md 的目标检查与显式修复规则；none 只用于有证据与授权的修复，不是交接/接入的默认清理。priority none 仅 PM；status none 只清当前角色有权设置的实际状态，混有无权状态则整体拒绝。清空前后回读，失败不假称成功，不自动清 retry/claim；PR 与未知目标不写入。
+
+## 支持与外部贡献
+
+按 references/issue-intake.md 分诊及确定处置出口，仅 engineering 回研发。明确 PR/MR 入口按 references/contribution-intake.md 查证并关联需求；三角色可用 integration pr-view 只读，不得借此 push、创建/评论贡献 PR 或合并。

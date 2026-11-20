@@ -1,5 +1,7 @@
 # Design：技术方案（I 阶段产出）
 
+> **历史记录，不是当前操作规范。** 本文保留 Issue #1 当时的设计、计划与验证叙述；其中版本、行号、14 个标签及 CLI 解析方式不代表当前实现。当前规则以 [SKILL.md](../../../SKILL.md) 和实际脚本为准，参见[文档导航](../../README.md)。
+
 > Issue: #1 | 阶段: [I] Innovation | 状态标签: `riper-innovation` | 优先级: `p0`
 > 产出角色: PM（见 `roles/planner.md`）——**全程只读代码，T0 禁止产出或修改任何实现代码**
 > 输入: `docs/issues/1/spec.md`（含 C1~C8 约束与 A1~A6 假设）

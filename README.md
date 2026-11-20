@@ -2,7 +2,7 @@
 
 [简体中文](README_CN.md)
 
-Current stable release: [v0.6.16](https://github.com/askdaddy/Git-Issue-Loop-Skill/releases/tag/v0.6.16). See [CHANGELOG.md](CHANGELOG.md) for release history.
+Current stable release: [v0.6.18](https://github.com/askdaddy/Git-Issue-Loop-Skill/releases/tag/v0.6.18). See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 `iloop` is an Agent Skill for running an issue-driven RIPER engineering loop:
 **Goal registration → Research → Innovation → Plan → Execute → Review**. A plain
@@ -86,7 +86,7 @@ CLIs: `gh`, `glab`, and `tea`.
   merging and publishing. The PR base defaults to the repository default branch;
   `--base <branch>` targets a non-default integration branch. Local-only
   delivery keeps the Issue open.
-- 24 shell invariant suites under `test/`, covering CLI behavior through stubs
+- 26 shell invariant suites under `test/`, covering CLI behavior through stubs
   and contract checks. The intake scenario walkthroughs are protocol reviews,
   not independent Agent end-to-end tests.
 
@@ -108,6 +108,19 @@ records go to the Planner, who verifies the report before changing labels:
 `issue get <N> --strict` stops when a body or comment CLI call fails. It does
 not certify pagination completeness or semantic accuracy. See the
 [intake protocol](references/issue-intake.md) and [record template](templates/intake.md).
+
+Support intake distinguishes questions, configuration/documentation problems, bugs,
+and feature requests. It can answer, wait for information, link a duplicate,
+record a maintainer decline, enter engineering, or associate a contribution.
+Support completion is not engineering verification; support closure requires the
+specific maintainer authorization described in the intake protocol.
+
+Use `/iloop pr N` or `/iloop mr N` for an external contribution. All three roles
+can read it with `integration pr-view N`; GitHub requests expanded metadata,
+while GitLab/tea native output may require additional evidence before proceeding.
+The [contribution protocol](references/contribution-intake.md) covers requirement
+association, author-preserving reuse, fresh acceptance, and avoiding duplicate
+PR delivery. This is a maintainer-invoked workflow, not a background support bot.
 
 ## Runtime feedback
 
@@ -197,6 +210,11 @@ For an initial label setup in a repository, run:
 ~/.agents/skills/iloop/scripts/git-ops.sh labels init
 ```
 
+For existing labels, `labels init` updates colors and descriptions on GitHub and
+GitLab; the tea path skips existing labels. Doctor checks label names only, so
+passing it does not establish that updates work. See the [CLI guide](references/cli-setup.md)
+for glab 1.130.0 ID-based updates and failure diagnosis.
+
 ## Requirements
 
 - Git and an Agent host that loads Skills from `~/.agents/skills/`.
@@ -220,14 +238,25 @@ scripts/git-ops.sh       Platform routing, Issue operations, and safeguards
 scripts/check-update.sh  Compares the installed Skill against the highest stable tag
 scripts/feedback.sh      Generates offline, limited-field feedback drafts
 scripts/runtime-events.sh Opt-in NDJSON runtime events written to fd 3
+scripts/integration.sh   Push, PR, Release, and cleanup operations loaded by git-ops.sh
 roles/                   Planner, Developer, and Reviewer role instructions
 templates/               Intake, spec, design, plan, verification-report, and run-summary templates
 references/              CLI setup, intake, feedback, integration, runtime output, minimum-code ladder
 test/                    Shell invariant suites and intake protocol walkthroughs
 CHANGELOG.md             Stable-release change history
-docs/issues/<N>/         Degraded-fallback stage documents, written only when the
-                         remote Issue platform is unavailable
+docs/README.md           Documentation map, maintenance checks, and historical context
+docs/issues/1/          Retained historical bootstrap records, not current rules
+docs/issues/<N>/         New stage documents only when the remote Issue platform
+                         is unavailable
 ```
+
+## Project maintenance
+
+This repository contains a static Skill and Bash scripts; it has no Node dependency
+installation or build step. See [docs/README.md](docs/README.md) for the document
+map, full-suite command, and historical-record boundaries. Verify documentation,
+script behavior, and release versions against their owning sources; historical
+Issue plans are not current specifications.
 
 ## Stable releases
 

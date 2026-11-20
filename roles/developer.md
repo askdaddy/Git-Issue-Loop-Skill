@@ -20,6 +20,10 @@
 - 经 `git-ops.sh --role developer` 评论、设置 execute/review/blocked；可创建计划外发现的跟进 Issue，随后交 PM 补优先级，不借新票扩权。
 - 提交到 `riper/N`，提交前 `git-ops.sh --role developer guard developer N`。脚本检查路径，不证明满足计划；归属不明先停，不删除他人文件。
 
+## 思考方法
+
+涉及专业判断或用户显式点名时，按 [思考方法](../references/thinking-methods.md) 读取相关条目；知识缺口仅安排本步所需的最小验证性学习。方法帮助满足冻结 WHAT，不授权新增功能、修订计划或启动持续任务。
+
 ## 阶段动作与产出
 
 1. 输入核验与接入交接完成后对齐 execute，从仍有效的未完成步骤继续。按编号满足每条验收，不跳过或合并需求。
@@ -42,3 +46,7 @@
 ## 显式标签修复
 
 遵循 SKILL.md 的目标检查与显式修复规则；none 只用于有证据与授权的修复，不是交接/接入的默认清理。priority none 仅 PM；status none 只清当前角色有权设置的实际状态，混有无权状态则整体拒绝。清空前后回读，失败不假称成功，不自动清 retry/claim；PR 与未知目标不写入。
+
+## 外部贡献
+
+按 references/contribution-intake.md 核验原贡献与当前验收提交映射，保留作者及来源；三角色均可 integration pr-view 只读，其他权限不变。新提交影响旧证据时重新核验，原 PR 与替代交付先明确决策，避免重复建 PR。

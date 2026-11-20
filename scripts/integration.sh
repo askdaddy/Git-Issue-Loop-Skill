@@ -24,8 +24,8 @@ cmd_integration() {
   local action="${1:-}"; [[ $# -gt 0 ]] || usage; shift
   # New write-capable commands never inherit the legacy missing-role bypass.
   case "$action:${ROLE}" in
-    local:developer|push:reviewer|pr-list:reviewer|pr-view:reviewer|pr-create:reviewer|release-view:reviewer|release-create:reviewer) ;;
-    *) integration_fail '集成动作需要显式角色：local=developer，其余=reviewer。'; return 1 ;;
+    pr-view:planner|pr-view:developer|local:developer|push:reviewer|pr-list:reviewer|pr-view:reviewer|pr-create:reviewer|release-view:reviewer|release-create:reviewer) ;;
+    *) integration_fail '集成动作需要显式角色：pr-view=planner/developer/reviewer，local=developer，其余=reviewer。'; return 1 ;;
   esac
   local num branch db plat sha remote_sha tag notes base
   case "$action" in
@@ -56,7 +56,7 @@ cmd_integration() {
           if [[ $# -eq 3 && "$2" == "--base" && -n "$3" ]]; then base="$3"; set -- "$1"; fi
           [[ $# -eq 1 ]] && valid_issue_num "$1" || usage
           ;;
-        pr-view) [[ $# -eq 1 ]] && valid_issue_num "$1" || usage ;;
+        pr-view) [[ $# -eq 1 && "$1" =~ ^[1-9][0-9]*$ ]] || usage ;;
         pr-create)
           if [[ $# -eq 5 && "$4" == "--base" && -n "$5" ]]; then base="$5"; set -- "$1" "$2" "$3"; fi
           [[ $# -eq 3 ]] && valid_issue_num "$1" && [[ -n "$2" && -f "$3" ]] || usage
@@ -64,7 +64,7 @@ cmd_integration() {
       esac
       plat="$(detect_platform)" || return 1; require_cli "$plat"
       if [[ "$action" == pr-view ]]; then
-        case "$plat" in gh) gh pr view "$1" --json url,state,baseRefName,headRefName,headRefOid ;; glab) glab mr view "$1" ;; tea) tea_cmd pulls "$1" ;; esac
+        case "$plat" in gh) gh pr view "$1" --json url,state,baseRefName,headRefName,headRefOid,number,title,body,comments,reviews,author,baseRefOid,headRepository,headRepositoryOwner,isCrossRepository,maintainerCanModify,closingIssuesReferences,updatedAt ;; glab) glab mr view "$1" ;; tea) tea_cmd pulls "$1" ;; esac
         return
       fi
       num="$1"; branch="riper/$num"
