@@ -6,6 +6,8 @@ than `main`.
 
 ## [Unreleased]
 
+## [0.6.20] - 2026-11-20
+
 ### Added
 
 - Global correction-only feedback queue (#70): `feedback.sh add|list|show|dismiss|reported`
@@ -16,6 +18,18 @@ than `main`.
   per-entry user review plus `reported` backfill; dismissed entries are never re-asked. Feature
   requests stay out (category enum is protocol-level rejection). All queue subcommands remain
   offline with allowlist fields only.
+
+### Fixed
+
+- Missing free labels are created before assignment on GitHub and GitLab;
+  existing label metadata is preserved. Creation/add failures are surfaced,
+  while managed label families keep their existing protection. (#26, PR #72)
+
+### Validation
+
+- The combined changes pass all 26 shell invariant suites, including offline
+  feedback queue and free-label creation fixtures. Real multi-platform CLI
+  network behavior and independent Agent E2E remain unverified.
 
 ## [0.6.19] - 2026-11-20
 
