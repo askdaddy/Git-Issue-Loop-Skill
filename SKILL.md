@@ -309,7 +309,7 @@ doctor / `labels init` 通过后、加载任何角色之前执行。本层是协
 
 **自动挑选**：只读、无角色、不写回 Issue。用户显性指定编号 / 目标 / 阶段意图时不触发本路径。
 
-1. **取候选四元组**（仅经 `git-ops.sh` 只读子命令；**禁止**为此提前加载任何 `roles/*.md`，禁止写状态/写标签/写评论）：`issue list --state open` 给出编号、优先级、RIPER 状态；retry 值逐个调 `issue retry <N> get`、认领状态逐个调 `issue claim <N> get`（列表**不含** retry / 认领列，二者单独读；`riper-claimed` 已被排除出状态列，不会污染 RIPER 状态）。若列表无标签列（glab/tea 降级，优先级/状态显示 `(无)`），改逐条 `issue get <N>` 读真实标签，并在报告中**标注该降级依据**，禁止按 `(无)` 占位静默误选。<!-- lazy-ladder: 逐条 retry get / claim get，open 量大时改 issue list 输出补 retry / 认领列 -->
+1. **取候选四元组**（仅经 `git-ops.sh` 只读子命令；**禁止**为此提前加载任何 `roles/*.md`，禁止写状态/写标签/写评论）：一次调用 `issue list --state open --with-retry --with-claim` 即可拿到编号、优先级、RIPER 状态、retry 值与认领状态——这四项本就都在同一份列表的标签列里，**不要**再逐个调 `issue retry <N> get` / `issue claim <N> get`。本条**取代原 C11**（数据源分离）：retry / 认领此前要求逐条读取，现默认从列表列取；两族仍不进 RIPER 状态列。降级：若平台列表无标签列（glab/tea），retry 与 claim 两列为空、优先级/状态显示 `(无)`，此时改逐条 `issue get <N>` 读真实标签并逐个读 retry / 认领，并在报告中**标注该降级依据**，禁止按 `(无)` 占位静默误选。
 2. **排序**：p0 → p1 → p2 → p3 → 无优先级；同键按编号升序（更老的先收尾）。无标签/未分类/来源 unknown 的候选必须展示，标注需接入；此时不分析业务代码、不修标签。该顺序由本步负责，不依赖 `issue list` 的打印顺序。
 3. **跳过规则**：`riper-blocked`（等人工介入）、`riper-retry-3`（重试超限）、`riper-verified` 但未关闭（异常态，仅提示人工关闭/重开，不改状态）、`riper-claimed`（已被其他会话认领，`issue claim <N> get` 输出 `claimed`），四者均不参选并须写明原因。陈旧认领只报告、不自动抢占（抢占属影响他人工作的动作，交回用户）。
 4. **呈报并等确认**：输出候选清单，每条含 `编号 / 优先级 / RIPER 状态 / retry 值 / 认领状态 / 是否跳过及原因`，末行给出选中项与一句话理由；**停在此处等用户确认或改选**，不得选完直接开工。改选任一编号等同显式 `/iloop <编号>`，重新进第 1 层分发。
