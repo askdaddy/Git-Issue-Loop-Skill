@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+# Opt-in live CLI smoke skeleton (#81).
+#
+# The other suites stub every CLI call, so they can only assert the formats the
+# implementation *expects*; real platform drift (#26 gh/glab split, #37 GitLab
+# Work Items, #70 Gitea list misreport) lives in that blind spot.
+#
+# This suite exercises the real `git-ops.sh` stack end-to-end. It is OFF by
+# default: without ILOOP_SMOKE_REPO it skips, so no existing suite gains a
+# network or write dependency. Point it at a disposable sandbox repository:
+#
+#   ILOOP_SMOKE_REPO=owner/sandbox-repo bash test/iloop-live-smoke-invariants.sh
+#
+# Writes only ever target that sandbox repository, never this one.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+GITOPS="${ROOT}/scripts/git-ops.sh"
+WORK="$(mktemp -d)"
+FAILS=0
+pass() { echo "PASS $1"; }
+fail() { echo "FAIL $1"; FAILS=$((FAILS + 1)); }
+
+# ---------------------------------------------------------------------------
+# Skip vs fail are different outcomes and must stay distinguishable (C5):
+#   unset ILOOP_SMOKE_REPO          -> "not enabled", skip, rc 0
+#   set but the sandbox is unusable -> "enabled but broken", FAIL, rc != 0
+# ---------------------------------------------------------------------------
+# Self-check: the two outcomes must remain distinguishable, so a broken sandbox
+# can never masquerade as "not enabled". This probes the decision logic itself
+# (a nested run of this suite would recurse), using a stub gh that always fails.
+mkdir -p "$WORK/probe-bin"
+cat > "$WORK/probe-bin/gh" <<'STUB'
+#!/usr/bin/env bash
+exit 1
+STUB
+chmod +x "$WORK/probe-bin/gh"
+
+decide() {
+  # Mirrors the branch order below: unset -> skip, set-but-unreachable -> fail.
+  local repo="$1"
+  if [[ -z "$repo" ]]; then echo "SKIP"; return 0; fi
+  if ! PATH="$WORK/probe-bin:$PATH" gh repo view "$repo" --json name >/dev/null 2>&1; then
+    echo "FAIL"
+    return 1
+  fi
+  echo "RUN"
+  return 0
+}
+
+skip_verdict=""; skip_rc=0
+skip_verdict="$(decide "")" || skip_rc=$?
+fail_verdict=""; fail_rc=0
+fail_verdict="$(decide "owner/nonexistent")" || fail_rc=$?
+[[ "$skip_verdict" == "SKIP" && "$skip_rc" -eq 0 ]] \
+  || { echo 'FAIL live smoke: unset repo must skip with rc 0'; exit 1; }
+[[ "$fail_verdict" == "FAIL" && "$fail_rc" -ne 0 ]] \
+  || { echo 'FAIL live smoke: unreachable repo must fail, not skip'; exit 1; }
+echo 'PASS live smoke: skip and fail stay distinguishable'
+
+SMOKE_REPO="${ILOOP_SMOKE_REPO:-}"
+if [[ -z "$SMOKE_REPO" ]]; then
+  echo "SKIP live smoke: ILOOP_SMOKE_REPO not set (this suite is opt-in)."
+  echo "SKIP live smoke: set ILOOP_SMOKE_REPO=<owner>/<sandbox-repo> to enable."
+  rm -rf "$WORK"
+  exit 0
+fi
+
+cleanup() {
+  # Report leftovers loudly instead of pretending a failed cleanup succeeded.
+  local rc=$?
+  if [[ -n "${SMOKE_ISSUE:-}" && "${SMOKE_CLEANED:-0}" != "1" ]]; then
+    echo "RESIDUE live smoke: issue ${SMOKE_ISSUE} (${SMOKE_REPO}) was not closed"
+    [[ "$rc" -eq 0 ]] && rc=1
+  fi
+  if [[ -n "${SMOKE_LABEL:-}" && "${SMOKE_LABEL_CLEANED:-0}" != "1" ]]; then
+    echo "RESIDUE live smoke: label ${SMOKE_LABEL} (${SMOKE_REPO}) was not removed"
+    [[ "$rc" -eq 0 ]] && rc=1
+  fi
+  rm -rf "$WORK"
+  exit "$rc"
+}
+trap cleanup EXIT
+
+# ---------------------------------------------------------------------------
+# Sandbox preflight: reachable or FAIL (never silently downgraded to skip).
+# ---------------------------------------------------------------------------
+if ! gh repo view "$SMOKE_REPO" --json name >/dev/null 2>&1; then
+  echo "FAIL live smoke: sandbox repo '$SMOKE_REPO' is unreachable or not authorized."
+  echo "FAIL live smoke: check that ILOOP_SMOKE_REPO names a disposable repo you own."
+  exit 1
+fi
+echo "PASS sandbox repo reachable: $SMOKE_REPO"
+
+# ---------------------------------------------------------------------------
+# Isolate: a throwaway git repo whose origin is the sandbox, so git-ops.sh
+# routes to the sandbox and never writes through this repository's remote.
+# ---------------------------------------------------------------------------
+SANDBOX="$WORK/sandbox"
+mkdir -p "$SANDBOX"
+git -C "$SANDBOX" init -q
+git -C "$SANDBOX" remote add origin "https://github.com/${SMOKE_REPO}.git"
+
+origin_url="$(git -C "$SANDBOX" remote -v | awk '/\(fetch\)/{print $2; exit}')"
+case "$origin_url" in
+  *"/${SMOKE_REPO}.git") pass "throwaway origin points at the sandbox" ;;
+  *) fail "throwaway origin does not point at the sandbox ($origin_url)" ;;
+esac
+
+run_ops() { ( cd "$SANDBOX" && bash "$GITOPS" "$@" ); }
+
+# ---------------------------------------------------------------------------
+# Minimal loop through the real wrapper: create -> labels init -> free label ->
+# status -> read -> close. Every write goes through git-ops.sh (C4).
+# ---------------------------------------------------------------------------
+stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+SMOKE_LABEL="area/smoke-${stamp}"
+
+if ! create_out="$(run_ops --role planner issue create \
+      "live smoke ${stamp}" "Temporary issue created by test/iloop-live-smoke-invariants.sh (#81); safe to delete." 2>&1)"; then
+  echo "$create_out"
+  fail "issue create through git-ops.sh"
+else
+  SMOKE_ISSUE="$(printf '%s\n' "$create_out" | grep -oE '/issues/[0-9]+' | tail -1 | tr -dc '0-9')"
+  if [[ -n "$SMOKE_ISSUE" ]]; then
+    pass "issue create through git-ops.sh (#${SMOKE_ISSUE})"
+  else
+    fail "issue create did not report an issue number"
+  fi
+fi
+
+if [[ -z "${SMOKE_ISSUE:-}" ]]; then
+  echo "FAIL live smoke: cannot continue without an issue number."
+  exit 1
+fi
+
+if run_ops --role planner issue priority "$SMOKE_ISSUE" p3 >/dev/null 2>&1; then
+  pass "issue priority through git-ops.sh"
+else
+  fail "issue priority through git-ops.sh"
+fi
+
+if run_ops --role planner issue label "$SMOKE_ISSUE" add "$SMOKE_LABEL" >/dev/null 2>&1; then
+  pass "free label add through git-ops.sh"
+else
+  fail "free label add through git-ops.sh"
+fi
+
+if run_ops --role planner issue status "$SMOKE_ISSUE" riper-research >/dev/null 2>&1; then
+  pass "issue status through git-ops.sh"
+else
+  fail "issue status through git-ops.sh"
+fi
+
+if run_ops issue get "$SMOKE_ISSUE" --strict >/dev/null 2>&1; then
+  pass "issue get --strict through git-ops.sh"
+else
+  fail "issue get --strict through git-ops.sh"
+fi
+
+# Cleanup happens before the trap can report residue.
+if run_ops issue label "$SMOKE_ISSUE" remove "$SMOKE_LABEL" >/dev/null 2>&1; then
+  SMOKE_LABEL_CLEANED=1
+  pass "free label removed"
+else
+  fail "free label removal"
+fi
+
+if run_ops --role reviewer issue close "$SMOKE_ISSUE" >/dev/null 2>&1; then
+  SMOKE_CLEANED=1
+  pass "sandbox issue closed"
+else
+  fail "sandbox issue close"
+fi
+
+echo "----------------------------------------"
+if [[ "$FAILS" -eq 0 ]]; then
+  echo "ALL PASS"
+  exit 0
+fi
+echo "FAILURES: $FAILS"
+exit 1
