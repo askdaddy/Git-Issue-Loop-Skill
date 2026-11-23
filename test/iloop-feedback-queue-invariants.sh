@@ -4,6 +4,18 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
+# Self-host HOME for the whole test process (not just child calls): the
+# real-home assertions below must check this controlled directory, never the
+# operator's ~/.agents, so the result cannot depend on their queue state (#79).
+ORIGINAL_HOME="${HOME:-}"
+# Snapshot the operator's real queue (read-only) so the run must leave it identical.
+OP_SNAPSHOT=""
+if [[ -n "$ORIGINAL_HOME" && -d "$ORIGINAL_HOME/.agents/iloop-feedback" ]]; then
+  OP_SNAPSHOT="$(cd "$ORIGINAL_HOME/.agents/iloop-feedback" && find . -type f -print0 \
+    | sort -z | xargs -0 shasum 2>/dev/null | shasum || true)"
+fi
+export HOME="$WORK/home"
+mkdir -p "$HOME"
 mkdir -p "$WORK/bin" "$WORK/q"
 export ILOOP_FEEDBACK_DIR="$WORK/q" FEEDBACK_CALL_LOG="$WORK/calls" PRIVATE_SECRET=PRIVATE_SECRET_MUST_NOT_APPEAR
 for tool in gh glab tea curl wget; do
@@ -81,8 +93,35 @@ echo 'PASS one-way state machine and reported backfill'
 
 # Whole queue lifecycle stayed offline; nothing landed outside fixtures.
 [[ ! -e "$WORK/calls" ]] || { echo 'FAIL platform/network call leaked'; exit 1; }
-[[ ! -e "$HOME/.agents/iloop-feedback" ]] || { echo 'FAIL real home touched'; exit 1; }
-echo 'PASS zero platform/network calls and real home untouched'
+# $HOME is the controlled fixture above (#79). Exactly one fallback write is
+# legitimate: the deliberate `env -u ILOOP_FEEDBACK_DIR` default-path case above.
+# Any additional entry under HOME means some call ignored its configured queue.
+fallback_entries="$(find "$HOME/.agents/iloop-feedback/entries" -type f 2>/dev/null | wc -l | tr -d ' ')"
+[[ "$fallback_entries" == "1" ]] || { echo "FAIL unexpected HOME fallback writes ($fallback_entries)"; exit 1; }
+[[ -f "$HOME/.agents/iloop-feedback/entries/$home_id.md" ]] || { echo 'FAIL controlled HOME mismatch'; exit 1; }
+echo 'PASS zero platform/network calls and controlled HOME untouched'
+
+# The assertion above must still be able to catch a real leak: prove the same
+# predicate flips on a lookalike tree, without ever writing the operator home (#79).
+LEAK_PROBE="$WORK/leak-probe"
+mkdir -p "$LEAK_PROBE/.agents/iloop-feedback/entries"
+probe_clean=0
+probe_leak=0
+[[ ! -e "$LEAK_PROBE/.agents/iloop-feedback/entries/probe.md" ]] && probe_clean=1
+: > "$LEAK_PROBE/.agents/iloop-feedback/entries/probe.md"
+[[ ! -e "$LEAK_PROBE/.agents/iloop-feedback/entries/probe.md" ]] || probe_leak=1
+[[ "$probe_clean" -eq 1 && "$probe_leak" -eq 1 ]] \
+  || { echo 'FAIL real-home guard cannot distinguish a leak'; exit 1; }
+echo 'PASS real-home guard would catch a leak'
+
+# The operator's own queue must be byte-identical to the pre-run snapshot.
+if [[ -n "$OP_SNAPSHOT" ]]; then
+  NOW_SNAPSHOT="$(cd "$ORIGINAL_HOME/.agents/iloop-feedback" && find . -type f -print0 \
+    | sort -z | xargs -0 shasum 2>/dev/null | shasum || true)"
+  [[ "$NOW_SNAPSHOT" == "$OP_SNAPSHOT" ]] || { echo 'FAIL operator queue changed'; exit 1; }
+fi
+echo 'PASS operator queue unchanged'
+
 
 # draft: schema-1 draft output unchanged (old suite covers it fully).
 "${FB[@]}" draft permission suspected | grep -q 'rule: ROLE-001' || { echo 'FAIL draft compat'; exit 1; }
