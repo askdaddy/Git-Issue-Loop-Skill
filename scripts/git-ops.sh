@@ -692,13 +692,17 @@ raw_issue_list() {
 # 用法：cmd_issue_list [--state open|closed|all] [--status <riper-*>] [--priority <p0|p1|p2|p3>]
 # 排序键：p0<p1<p2<p3<无优先级；Bash 3.2 兼容（加数字前缀 sort -n 后剥离，禁 declare -A）。
 cmd_issue_list() {
-  local state="open" want_status="" want_prio=""
+  local state="open" want_status="" want_prio="" want_retry=0 want_claim=0
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --state)    [[ $# -ge 2 ]] || { log_error "--state 需要参数（open|closed|all）。"; exit 1; };    state="$2";       shift 2 ;;
       --status)   [[ $# -ge 2 ]] || { log_error "--status 需要参数（riper-*）。"; exit 1; };            want_status="$2"; shift 2 ;;
       --priority) [[ $# -ge 2 ]] || { log_error "--priority 需要参数（p0|p1|p2|p3）。"; exit 1; };      want_prio="$2";   shift 2 ;;
-      *) log_error "未知参数：'$1'（合法：--state open|closed|all / --status <riper-*> / --priority <p0|p1|p2|p3>）。"; exit 1 ;;
+      # 能力位（Issue #80）：重试/认领状态本就在列表标签列里，请求时追加为独立输出列，
+      # 省掉自动挑选的 2N 次逐条读取；不传则输出与旧版一致。
+      --with-retry) want_retry=1; shift ;;
+      --with-claim) want_claim=1; shift ;;
+      *) log_error "未知参数：'$1'（合法：--state open|closed|all / --status <riper-*> / --priority <p0|p1|p2|p3> / --with-retry / --with-claim）。"; exit 1 ;;
     esac
   done
 
@@ -737,15 +741,16 @@ EOF_RAW
 
   # 过滤 + 计算排序键 → 输出「key<TAB>num<TAB>prio<TAB>status<TAB>title」→ 排序 → 对齐表格
   {
-    local num st title labels tok prio disp key
+    local num st title labels tok prio disp key retry_k claimed row
     while IFS="$(printf '\t')" read -r num st title labels; do
       [[ -z "${num}" ]] && continue
-      prio=""; disp=""
+      prio=""; disp=""; retry_k=0; claimed=unclaimed
       for tok in $(printf '%s' "${labels}" | tr ',' ' '); do
         case "${tok}" in
           p0|p1|p2|p3)   [[ -z "${prio}" ]] && prio="${tok}" ;;
-          riper-retry-*) : ;;
-          riper-claimed) : ;;  # 认领标签非状态，排除出状态列（否则污染自动挑选读取）
+          # 两族仍不进状态列（否则污染 RIPER 状态），但在请求时收集为独立列。
+          riper-retry-*)  retry_k="${tok#riper-retry-}" ;;
+          riper-claimed)  claimed=claimed ;;
           riper-*)       [[ -z "${disp}" ]] && disp="${tok}" ;;
         esac
       done
@@ -758,15 +763,48 @@ EOF_RAW
       [[ -z "${prio}" ]] && prio="(无)"
       [[ -z "${disp}" ]] && disp="${st}"
       case "${prio}" in p0) key=0 ;; p1) key=1 ;; p2) key=2 ;; p3) key=3 ;; *) key=4 ;; esac
-      printf '%s\t%s\t%s\t%s\t%s\n' "${key}" "${num}" "${prio}" "${disp}" "${title}"
+      # 内部固定输出七列（末两列恒为 retry / claim），输出端按请求取舍。
+      # 固定位置可避免空列在 IFS 折叠下错位。
+      # 标签列不可用（glab/tea 降级）时两列留空，绝不伪造 0 / unclaimed。
+      row="$(printf '%s\t%s\t%s\t%s\t%s' "${key}" "${num}" "${prio}" "${disp}" "${title}")"
+      if [[ "${labels_avail}" -eq 1 ]]; then
+        row="${row}$(printf '\t')${retry_k}$(printf '\t')${claimed}"
+      else
+        row="${row}$(printf '\t')$(printf '\t')"
+      fi
+      printf '%s\n' "${row}"
     done <<EOF_ROWS
 ${raw}
 EOF_ROWS
   } | sort -t"$(printf '\t')" -k1,1n -k2,2n | {
-    printf '%-7s %-7s %-19s %s\n' "编号" "优先级" "状态" "标题"
-    local key num prio disp title
-    while IFS="$(printf '\t')" read -r key num prio disp title; do
-      printf '%-7s %-7s %-19s %s\n' "#${num}" "${prio}" "${disp}" "${title}"
+    local key num prio disp title retry_c claim_c tail
+    # 追加列的表头用 ASCII，避免多字节标签撑破宽度对齐。
+    if [[ "${want_retry}" -eq 1 || "${want_claim}" -eq 1 ]]; then
+      printf '%-7s %-7s %-19s %-14s' "编号" "优先级" "状态" "标题"
+      [[ "${want_retry}" -eq 1 ]] && printf ' %-5s' "retry"
+      [[ "${want_claim}" -eq 1 ]] && printf ' %s' "claim"
+      printf '\n'
+    else
+      printf '%-7s %-7s %-19s %s\n' "编号" "优先级" "状态" "标题"
+    fi
+    local __line
+    while IFS= read -r __line; do
+      # 逐列按 TAB 切分，保留空字段位置（连续分隔符不会被折叠）。
+      key="${__line%%"$(printf '\t')"*}"; __line="${__line#*"$(printf '\t')"}"
+      num="${__line%%"$(printf '\t')"*}"; __line="${__line#*"$(printf '\t')"}"
+      prio="${__line%%"$(printf '\t')"*}"; __line="${__line#*"$(printf '\t')"}"
+      disp="${__line%%"$(printf '\t')"*}"; __line="${__line#*"$(printf '\t')"}"
+      title="${__line%%"$(printf '\t')"*}"; __line="${__line#*"$(printf '\t')"}"
+      retry_c="${__line%%"$(printf '\t')"*}"; __line="${__line#*"$(printf '\t')"}"
+      claim_c="${__line}"
+      if [[ "${want_retry}" -eq 1 || "${want_claim}" -eq 1 ]]; then
+        printf '%-7s %-7s %-19s %-14s' "#${num}" "${prio}" "${disp}" "${title}"
+        [[ "${want_retry}" -eq 1 ]] && printf ' %-5s' "${retry_c}"
+        [[ "${want_claim}" -eq 1 ]] && printf ' %s' "${claim_c}"
+        printf '\n'
+      else
+        printf '%-7s %-7s %-19s %s\n' "#${num}" "${prio}" "${disp}" "${title}"
+      fi
     done
   }
 }
