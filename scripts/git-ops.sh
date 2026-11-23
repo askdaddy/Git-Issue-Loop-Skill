@@ -746,10 +746,14 @@ EOF_RAW
       [[ -z "${num}" ]] && continue
       prio=""; disp=""; retry_k=0; claimed=unclaimed
       for tok in $(printf '%s' "${labels}" | tr ',' ' '); do
-        case "${tok}" in
-          p0|p1|p2|p3)   [[ -z "${prio}" ]] && prio="${tok}" ;;
+        # 大小写不敏感：与 raw_label_ensure / 族清理的判定口径一致，
+        # 否则 RIPER-RETRY-2 这类变体会被静默当成「无重试」。
+        local tok_lc
+        tok_lc="$(printf '%s' "${tok}" | tr '[:upper:]' '[:lower:]')"
+        case "${tok_lc}" in
+          p0|p1|p2|p3)   [[ -z "${prio}" ]] && prio="${tok_lc}" ;;
           # 两族仍不进状态列（否则污染 RIPER 状态），但在请求时收集为独立列。
-          riper-retry-*)  retry_k="${tok#riper-retry-}" ;;
+          riper-retry-*)  retry_k="${tok_lc#riper-retry-}" ;;
           riper-claimed)  claimed=claimed ;;
           riper-*)       [[ -z "${disp}" ]] && disp="${tok}" ;;
         esac
