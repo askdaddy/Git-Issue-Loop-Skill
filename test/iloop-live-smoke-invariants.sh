@@ -134,6 +134,15 @@ if [[ -z "${SMOKE_ISSUE:-}" ]]; then
   exit 1
 fi
 
+# Managed families (p0-p3 / riper-*) only exist after `labels init`. The stub
+# suites never noticed because their fixtures pre-seed the labels; a fresh sandbox
+# repo has none, so this step is what the live run actually exposed (#83).
+if run_ops labels init >/dev/null 2>&1; then
+  pass "labels init through git-ops.sh"
+else
+  fail "labels init through git-ops.sh"
+fi
+
 if run_ops --role planner issue priority "$SMOKE_ISSUE" p3 >/dev/null 2>&1; then
   pass "issue priority through git-ops.sh"
 else
@@ -158,12 +167,19 @@ else
   fail "issue get --strict through git-ops.sh"
 fi
 
-# Cleanup happens before the trap can report residue.
+# Cleanup runs before the trap can report residue. Removing the label from the
+# issue is not enough: the repo-level label *definition* is what survives, so the
+# live run deletes it too (a stub fixture never has to).
 if run_ops issue label "$SMOKE_ISSUE" remove "$SMOKE_LABEL" >/dev/null 2>&1; then
-  SMOKE_LABEL_CLEANED=1
-  pass "free label removed"
+  pass "free label removed from the issue"
 else
-  fail "free label removal"
+  fail "free label removal from the issue"
+fi
+if gh label delete "$SMOKE_LABEL" --repo "$SMOKE_REPO" --yes >/dev/null 2>&1; then
+  SMOKE_LABEL_CLEANED=1
+  pass "free label definition deleted from the sandbox"
+else
+  fail "free label definition deletion"
 fi
 
 if run_ops --role reviewer issue close "$SMOKE_ISSUE" >/dev/null 2>&1; then
