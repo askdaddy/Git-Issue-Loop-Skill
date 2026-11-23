@@ -45,11 +45,11 @@ has '\*\*自动挑选\*\*：只读、无角色、不写回 Issue' "auto-pick is 
 has '禁止\*\*为此提前加载任何 `roles/\*\.md`，禁止写状态/写标签/写评论' "no role loading and no writes before dispatch (C1)"
 
 echo "=== (A3) pick inputs, ordering, skip rules, degradation ==="
-has '`issue list --state open` 给出编号、优先级、RIPER 状态' "list supplies num/priority/status"
-has 'retry 值逐个调 `issue retry <N> get`' "retry comes from retry get, not from list (C11)"
-has '认领状态逐个调 `issue claim <N> get`' "claim state comes from claim get, not from list"
-has '列表\*\*不含\*\* retry / 认领列' "list carries neither retry nor claim column (source separation)"
-has '`riper-claimed` 已被排除出状态列，不会污染 RIPER 状态' "claim label excluded from the status column"
+has '`issue list --state open --with-retry --with-claim` 即可拿到编号、优先级、RIPER 状态、retry 值与认领状态' "list supplies the whole tuple in one call (supersedes C11)"
+has '本条\*\*取代原 C11\*\*' "C11 supersession is written down, not silent"
+has '\*\*不要\*\*再逐个调 `issue retry <N> get`' "per-issue retry get is explicitly deprecated"
+has 'retry 与 claim 两列为空' "degraded platforms have empty retry/claim columns"
+has '`riper-claimed`' "claim label still named in the pick rules"
 has 'p0 → p1 → p2 → p3 → 无优先级；同键按编号升序' "ordering rule is written down"
 has '该顺序由本步负责，不依赖 `issue list` 的打印顺序' "ordering owned by the pick step"
 has '`riper-blocked`（等人工介入）' "skip state: blocked"
@@ -166,10 +166,13 @@ if [[ "$(printf '%s\n' "$rows" | wc -l | tr -d ' ')" -eq 6 ]]; then
 else
   fail "expected 6 rows, got: $(printf '%s\n' "$rows" | wc -l | tr -d ' ')"
 fi
+# C11 was superseded in #80: the list may now carry retry/claim when asked.
+# Default output must stay free of them, so the old assertion still guards
+# that the *default* column set is unchanged.
 if grep -q 'retry' <<<"$rows"; then
-  fail "retry leaked into issue list output (pick would need a second source, doc says list has no retry column)"
+  fail "retry leaked into default issue list output"
 else
-  pass "no retry column in issue list (C11 source separation holds)"
+  pass "default issue list output still has no retry column"
 fi
 # sorted by priority then number: p0 group (#32,#33,#34) precedes p1 (#31)
 first_row="$(printf '%s\n' "$rows" | head -1)"
