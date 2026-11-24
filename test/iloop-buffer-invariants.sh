@@ -119,10 +119,21 @@ assert_grep "${ROOT}/README_CN.md" '会话粘性 buffer' "Chinese README documen
 assert_grep "${ROOT}/README_CN.md" '/iloop exit' "Chinese README documents exit"
 assert_grep "${ROOT}/README.md" 'session-sticky iloop buffer' "English README documents the buffer"
 assert_grep "${ROOT}/README.md" '/iloop exit' "English README documents exit"
-# Compare the documented inventory to actual runnable suites, not a stale release literal.
-suite_count=0
-for suite_file in "${ROOT}"/test/*.sh; do suite_count=$((suite_count + 1)); done
-assert_grep "${ROOT}/README.md" "${suite_count} shell invariant suites" "English README suite count is current"
+# The README must not carry a literal suite count (#86): a number there goes
+# stale whenever test/ changes, and two parallel branches that each add one suite
+# merge silently into a wrong count. Assert the absence, not a fresh number.
+assert_no_grep "${ROOT}/README.md" '^[[:space:]]*-[[:space:]]*[0-9]+ shell invariant suites' \
+  "English README carries no literal suite count"
+assert_grep "${ROOT}/README.md" 'invariant suites under' "English README still points at test/"
+
+# The inventory's source of truth is the filesystem, so it must be non-empty.
+suite_count="$(find "${ROOT}/test" -maxdepth 1 -name '*.sh' -type f | wc -l | tr -d ' ')"
+if [[ "${suite_count}" -ge 1 ]]; then
+  echo "PASS test/ contains invariant suites (${suite_count})"
+else
+  echo "FAIL test/ contains no invariant suites"
+  FAILS=$((FAILS + 1))
+fi
 
 echo "=== step 8 conversational state only ==="
 assert_no_grep "$SKILL" '\.loop-state' "SKILL.md must not introduce .loop-state"
