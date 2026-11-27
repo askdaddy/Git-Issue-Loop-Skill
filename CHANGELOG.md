@@ -6,6 +6,51 @@ than `main`.
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in live CLI smoke (#81, #83): `test/iloop-live-smoke-invariants.sh`
+  runs the real wrapper against a disposable sandbox repository, so platform
+  drift that every stub fixture hides becomes observable. It stays off unless
+  `ILOOP_SMOKE_REPO` names a sandbox, and a broken sandbox fails instead of
+  skipping.
+- `smoke sandbox create|delete` and `smoke require-origin` (#95): a one-command
+  sandbox lifecycle plus a hard guard that refuses to run a smoke when the
+  fixture's `origin` is not the sandbox. `delete` needs an explicit `--yes`, the
+  name must carry `iloop-smoke`, and a missing `delete_repo` scope is reported
+  with the exact recovery command.
+- `issue list --with-retry --with-claim` (#80): retry and claim state are
+  already in the list's label column, so auto-pick reads them in one call
+  instead of 2N per-issue reads. The default output is byte-identical, and a
+  degraded platform leaves the columns empty rather than faking `0`.
+
+### Fixed
+
+- Test suites no longer depend on operator state (#79, #91): the feedback queue
+  suite hosts its own `HOME`, and the workspace suite detects new real-repo
+  residue directionally instead of comparing a global snapshot that other Agent
+  sessions change concurrently.
+- The README no longer carries a literal suite count (#86): a number there went
+  stale on every `test/` change, and two parallel branches adding one suite
+  each merged silently into a wrong count. The assertion now forbids the
+  literal instead of asserting a fresh one.
+- `tea` output is parsed through its machine-readable formats (#87): `issue list`
+  reads `--output tsv` instead of a boxed table, and the Issue type check reads
+  `--output json`, which is the only format the detail command honours.
+  Responses must contain exactly one object, so an ambiguous reply cannot clear
+  labels before failing.
+- `feedback.sh list` distinguishes a reported-only queue from an empty one
+  (#94): stdout keeps the historical `0` for existing callers, and stderr names
+  how many entries exist outside the requested scope.
+
+### Validation
+
+- All 30 shell invariant suites pass, including new fixtures for the smoke
+  sandbox lifecycle, the batch retry/claim column and the feedback list states.
+- The live smoke ran against real GitHub and a local Gitea instance, which is
+  what surfaced missing `labels init` and the `tea` parsing defects. Auto-pick,
+  `smoke require-origin` and the label write paths were verified there; glab
+  and the sandbox `delete` path remain unverified.
+
 ## [0.6.20] - 2026-11-20
 
 ### Added

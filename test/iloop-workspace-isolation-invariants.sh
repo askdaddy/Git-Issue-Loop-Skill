@@ -31,9 +31,11 @@ trap 'rm -rf "$WORK"' EXIT
 #
 # What this suite must never do is *add* anything. It is read-only on $ROOT: every
 # git-ops call below runs in $REPO or $WORK, never in $ROOT (asserted in step 10b).
+# No match is a valid answer here (a clean real repo has no skill worktree), so
+# keep grep's exit 1 from tripping `set -e` under pipefail (#91).
 real_skill_worktrees() {
   git -C "$ROOT" worktree list --porcelain 2>/dev/null \
-    | sed -n 's|^worktree ||p' | grep '/\.iloop-worktrees/' | sort
+    | sed -n 's|^worktree ||p' | grep '/\.iloop-worktrees/' | sort || true
 }
 REAL_WT_BEFORE="$(real_skill_worktrees)"
 REAL_STATUS_BEFORE="$(git -C "$ROOT" status --porcelain | sort)"
