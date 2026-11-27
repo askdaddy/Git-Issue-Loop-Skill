@@ -110,20 +110,28 @@ cmd_add() {
 
 # lazy-ladder: plain directory scan, fine up to hundreds of entries; add an index if this ever matters.
 cmd_list() {
-  local scope="${1:-pending}" f count=0
+  local scope="${1:-pending}" f count=0 others=0 status
   case "$scope" in pending|all) ;; *) usage ;; esac
   local entries
   entries="$(queue_root)/entries"
   [[ -d "$entries" ]] || { printf '0\n'; return 0; }
   for f in "$entries"/*.md; do
     [[ -e "$f" ]] || break
-    [[ "$scope" == pending && "$(entry_field "$f" status)" != pending ]] && continue
+    status="$(entry_field "$f" status)"
+    [[ "$scope" == pending && "$status" != pending ]] && { others=$((others + 1)); continue; }
     printf '%s %s %s %s %s\n' \
       "$(entry_field "$f" id)" "$(entry_field "$f" created)" \
-      "$(entry_field "$f" category)" "$(entry_field "$f" status)" "$(entry_field "$f" summary)"
+      "$(entry_field "$f" category)" "$status" "$(entry_field "$f" summary)"
     count=$((count + 1))
   done
-  [[ "$count" -eq 0 ]] && printf '0\n'
+  if [[ "$count" -eq 0 ]]; then
+    # stdout stays "0" so callers keep reading "nothing pending"; the hint on
+    # stderr keeps "empty" and "reported-only" distinguishable (#94).
+    printf '0\n'
+    if [[ "$others" -gt 0 ]]; then
+      printf 'feedback: 另有 %s 条已上报/已拒绝条目，用 list all 查看\n' "$others" >&2
+    fi
+  fi
   return 0
 }
 
