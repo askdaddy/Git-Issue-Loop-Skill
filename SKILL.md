@@ -118,6 +118,7 @@ description: >-
 - **测试脚本位置**：QA 的黑盒测试脚本默认落 `test/`；用户显性指定时以用户为准。
 - **平台操作**：Issue / PR / Release 经 `scripts/git-ops.sh` 执行，禁止直接调用 `gh` / `glab` / `tea`。加载角色后的操作必须携带 `--role <当前角色>`；无角色入口仅可执行自检、标签初始化与分发所需只读命令，不为通过权限检查伪造角色。本地 Git 读写与经授权的 tag 操作按对应阶段执行。脚本按 §1.1 权限矩阵与 §1.2 标签体系硬性校验。子命令清单：`issue list|get|comment|create|close|reopen|priority|status|retry|claim|label`、`labels init`、`guard <role> [N]`、`workspace status|start|finish`、`platform`、`doctor`。
 - **工作区隔离（并行会话必须遵守）**：一 Issue 一 worktree 一分支。开工前先 `./scripts/git-ops.sh workspace start <N>`，脚本会在**仓库外** `../.iloop-worktrees/<repo>/<N>` 建 worktree 并挂 `riper/<N>` 分支。基分支恒为 `origin/<默认分支>`，**不基于本地分支**——本地分支可能带着别的会话尚未推送的提交。已经在 linked worktree 内时**不嵌套创建**，只把当前工作区规范化到 `riper/<N>`（detached HEAD 就地挂分支并保留原提交）。收尾用 `workspace finish <N>`（仅当工作区干净且已合并进 `origin/<默认分支>`，否则拒绝清理）；推送 / PR 属集成阶段，见 references/integration.md；默认不自动合并。
+- **冒烟必须固定 origin（环境级）**：任何对真实平台执行写操作的冒烟，必须先 `smoke require-origin <fixture> <沙箱>`；该守卫的 origin 不匹配即失败，**不得回退到真实仓库**（#87 事故：fixture 临时目录被清理后 origin 回退，诊断命令改掉了真实 Issue）。沙箱用 `smoke sandbox create` 建、`smoke sandbox delete --yes` 删。
 - **认领互斥（并行会话必须遵守）**：`workspace start <N>` 成功（先过同机 `riper/<N>` 分支快失败这道硬闸）后，立即 `./scripts/git-ops.sh issue claim <N> claim` 写远端认领信号（`riper-claimed` 标签 + 审计评论），使其他会话的自动挑选跳过本 Issue；若 `claim` 报告"已被认领"则**不抢占**，停下交回用户。释放在闭环终态执行（见 §3.7）。认领是尽力而为信号、非硬锁（详见 §1.2(4)）。
 - **cwd 会被宿主重置**：`workspace start` 输出的是 worktree 的**绝对路径**，宿主可能在每次工具调用后把 cwd 重置回会话起点。故后续所有仓库内命令都必须以该绝对路径为 cwd（`cd <绝对路径> && …` 前缀，或使用工具自带的工作目录参数），**不得假设 cwd 会延续**；不确定时先跑 `./scripts/git-ops.sh workspace status` 确认自己在哪个工作树、哪条分支、归属哪个 Issue。
 - **平台路由**：脚本通过 `git remote -v` 自动检测并路由到对应 CLI，Agent 无需关心托管平台差异。
@@ -533,6 +534,9 @@ Agent 在启动/分发、阶段交接、暂停、恢复、结束时按 [阶段�
 ./scripts/git-ops.sh --role reviewer issue retry <N> <incr|get|reset> → 重试计数持久化（incr 仅 QA；get/reset 不限角色）
 ./scripts/git-ops.sh issue claim <N> <claim|release|get>          → 认领互斥（非排他 riper-claimed；claim 写标签+审计评论，已认领则拒绝抢占；release 释放；get 读 claimed/unclaimed）
 ./scripts/git-ops.sh guard <role> [N]                             → 可写区域越界自检（提交前必跑；越界 exit 1；给出 N 则同时校验当前分支是否为 riper/<N>）
+./scripts/git-ops.sh smoke sandbox create [--name <n>]              → 建一次性冒烟沙箱（默认名含 iloop-smoke-<UTC>，私有）
+./scripts/git-ops.sh smoke sandbox delete <repo> --yes              → 删沙箱（须 --yes，且名字须含 iloop-smoke，防误删真实仓库）
+./scripts/git-ops.sh smoke require-origin <dir> <沙箱>              → **硬闸**：校验 <dir> 的 origin 指向沙箱，否则失败（防冒烟误落真实仓库）
 ./scripts/git-ops.sh workspace status                             → 报告当前在哪个工作树/分支、归属哪个 Issue、worktree 清单（只读，随时可跑）
 ./scripts/git-ops.sh workspace start <N>                          → 为 Issue N 建隔离工作区：仓库外 ../.iloop-worktrees/<repo>/<N> + riper/<N> 分支，基于 origin/<默认分支>
 ./scripts/git-ops.sh workspace finish <N>                         → 清理 Issue N 的本地工作区（仅当干净且已合并进上游；不推送、不合并）

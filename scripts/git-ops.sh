@@ -109,6 +109,9 @@ Commands:
   git-ops.sh labels init                            初始化标签体系（4 优先级 + 7 状态 + 3 重试 + 1 认领，幂等）
   git-ops.sh guard <role> [num]                    可写区域越界自检（提交前必跑；role=planner|developer|reviewer；
                                                     num=Issue 编号，给出时额外校验当前分支是否为 riper/<num>）
+  git-ops.sh smoke sandbox create [--name <n>]      创建一次性冒烟沙箱仓库（默认名含 iloop-smoke-<UTC>）
+  git-ops.sh smoke sandbox delete <repo> --yes      删除沙箱（须 --yes，且名字须含 iloop-smoke）
+  git-ops.sh smoke require-origin <dir> <沙箱>      校验 <dir> 的 origin 指向沙箱，否则失败（防误落真实仓库）
   git-ops.sh workspace status                       报告工作区隔离状态（主/linked、分支、归属 Issue、worktree 清单）
   git-ops.sh workspace start <num> [--base <ref>]   为 Issue <num> 建立隔离工作区（仓库外 worktree + riper/<num> 分支，基于上游）
   git-ops.sh workspace finish <num>                 清理 Issue <num> 的本地工作区（仅干净且已合并进上游时；不含推送/合并）
@@ -2104,6 +2107,169 @@ valid_issue_num() {
 }
 
 # ---------------------------------------------------------------------------
+# smoke：真实 CLI 冒烟的沙箱辅助（Issue #95）。环境级操作，不限角色。
+#
+# 冒烟必须只写一次性沙箱仓库。上一轮事故（#87）正是 fixture 的 origin 回退到了
+# 真实仓库，诊断命令因此改掉了真实 Issue —— 本组子命令就是那道防线。
+# ---------------------------------------------------------------------------
+
+# 规范化仓库 URL/简写：去 .git 后缀与尾斜杠，保留 scheme+host+path。
+# 用法：normalize_repo_url <owner/repo | http(s)://host/owner/repo>
+normalize_repo_url() {
+  local raw="$1" scheme="" rest=""
+  case "${raw}" in
+    http://*|https://*) scheme="${raw%%://*}"; rest="${raw#*://}" ;;
+    *)
+      scheme="https"
+      rest="$(_smoke_default_host)/${raw}"
+      ;;
+  esac
+  rest="${rest%.git}"
+  rest="${rest%/}"
+  printf '%s://%s\n' "${scheme}" "${rest}"
+}
+
+# 当前平台默认实例 host（从已授权 CLI 的登录态推断；失败则用平台公共域名）。
+_smoke_default_host() {
+  local plat host
+  plat="$(detect_platform)" || { echo "github.com"; return 0; }
+  case "${plat}" in
+    gh)
+      host="$(gh api user --jq '.login // empty' 2>/dev/null >/dev/null && \
+              gh auth status 2>&1 | sed -n 's/.*Host: *//p' | head -n 1)"
+      [[ -n "${host}" ]] || host="github.com"
+      ;;
+    glab) host="$(printf '%s' "${GITLAB_HOST:-gitlab.com}")" ;;
+    tea)  host="$(tea login list 2>/dev/null | sed -n 's|.*\(https\?://[^ ]*\).*|\1|p' | head -n 1 | sed 's|^https\?://||')"
+          [[ -n "${host}" ]] || host="gitea.com" ;;
+    *)    host="github.com" ;;
+  esac
+  printf '%s\n' "${host}"
+}
+
+# 沙箱名必须含此标识，且不得等于真实仓库名（C3）。
+SMOKE_MARKER="iloop-smoke"
+
+cmd_smoke_sandbox_create() {
+  local name="" plat owner full ts
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --name) [[ $# -ge 2 ]] || { log_error "--name 需要参数。"; exit 1; }; name="$2"; shift 2 ;;
+      *) log_error "未知参数：'$1'（合法：--name <n>）。"; exit 1 ;;
+    esac
+  done
+  if [[ -z "${name}" ]]; then
+    ts="$(date -u +%Y%m%dT%H%M%SZ)"
+    name="${SMOKE_MARKER}-${ts}"
+  fi
+  case "${name}" in
+    *"${SMOKE_MARKER}"*) ;;
+    *) log_error "沙箱名必须含 '${SMOKE_MARKER}'：'${name}'。"; exit 1 ;;
+  esac
+
+  plat="$(detect_platform)" || exit 1
+  require_cli "${plat}"
+
+  case "${plat}" in
+    gh)
+      owner="$(gh api user --jq .login 2>/dev/null)" || { log_error "无法读取 gh 账号，不能建沙箱。"; exit 1; }
+      [[ -n "${owner}" ]] || { log_error "无法读取 gh 账号，不能建沙箱。"; exit 1; }
+      full="${owner}/${name}"
+      gh repo create "${full}" --private --add-readme >/dev/null 2>&1 \
+        || { log_error "gh repo create 失败：${full}"; exit 1; }
+      ;;
+    glab)
+      owner="$(glab api user 2>/dev/null | sed -n 's/.*"username":"\([^"]*\)".*/\1/p' | head -n 1)"
+      [[ -n "${owner}" ]] || { log_error "无法读取 glab 账号，不能建沙箱。"; exit 1; }
+      full="${owner}/${name}"
+      glab repo create "${full}" --private >/dev/null 2>&1 \
+        || { log_error "glab repo create 失败：${full}"; exit 1; }
+      ;;
+    tea)
+      tea_cmd repos create --name "${name}" --private --init >/dev/null 2>&1 \
+        || { log_error "tea repos create 失败：${name}"; exit 1; }
+      full="$(compute_repo_slug 2>/dev/null)" || full="${name}"
+      full="$(printf '%s' "${full}" | sed "s|/[^/]*$|/${name}|")"
+      ;;
+    *) log_error "未知平台，不能建沙箱。"; exit 1 ;;
+  esac
+  printf '%s\n' "${full}"
+}
+
+cmd_smoke_sandbox_delete() {
+  local target="" confirmed=0 plat delete_out
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --yes) confirmed=1; shift ;;
+      -*) log_error "未知参数：'$1'。"; exit 1 ;;
+      *) [[ -z "${target}" ]] || { log_error "只接受一个仓库参数。"; exit 1; }; target="$1"; shift ;;
+    esac
+  done
+  [[ -n "${target}" ]] || { log_error "用法：smoke sandbox delete <owner/repo> --yes"; exit 1; }
+  # 防误删：必须显式 --yes，且名字必须带沙箱标识。
+  if [[ "${confirmed}" -ne 1 ]]; then
+    log_error "删除沙箱必须显式 --yes（防误删）：smoke sandbox delete ${target} --yes"
+    exit 1
+  fi
+  case "/${target}/" in
+    *"/${SMOKE_MARKER}"*) ;;
+    *) log_error "拒绝删除：'${target}' 的名字不含 '${SMOKE_MARKER}'，只删沙箱。"; exit 1 ;;
+  esac
+
+  plat="$(detect_platform)" || exit 1
+  require_cli "${plat}"
+  case "${plat}" in
+    gh)
+      if ! delete_out="$(gh repo delete "${target}" --yes 2>&1)"; then
+        # 删除仓库需要 delete_repo scope，普通 repo scope 不够；给出可执行指引，
+        # 而不是含糊的「可能残留」——残留是确定的，恢复方法也是确定的。
+        case "${delete_out}" in
+          *delete_repo*|*admin\ rights*)
+            log_error "删除沙箱失败：token 缺少 delete_repo scope（仓库 ${target} 仍在）。"
+            log_error "恢复：gh auth refresh -h github.com -s delete_repo 后重试："
+            log_error "  git-ops.sh smoke sandbox delete ${target} --yes"
+            ;;
+          *) log_error "删除沙箱失败：${target}（${delete_out}）"; ;;
+        esac
+        exit 1
+      fi
+      ;;
+    glab) glab repo delete "${target}" --yes >/dev/null 2>&1 \
+            || { log_error "删除沙箱失败：${target}（可能残留，请手工清理）"; exit 1; } ;;
+    tea)  tea_cmd repos delete --delete-from-db "${target}" >/dev/null 2>&1 \
+            || { log_error "删除沙箱失败：${target}（可能残留，请手工清理）"; exit 1; } ;;
+    *)    return 1 ;;
+  esac
+  log_info "已删除沙箱：${target}"
+}
+
+# 硬闸：cwd 的 origin 必须指向沙箱，否则失败（绝不回退真实仓库）。
+cmd_smoke_require_origin() {
+  if [[ $# -ne 2 ]]; then
+    log_error "用法：smoke require-origin <gitdir> <owner/repo|URL>"
+    exit 1
+  fi
+  local dir="$1" sandbox="$2" actual want
+  if ! git -C "${dir}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    log_error "smoke require-origin：'${dir}' 不是 git 工作树。"
+    exit 1
+  fi
+  actual="$(git -C "${dir}" remote get-url origin 2>/dev/null)" || actual=""
+  if [[ -z "${actual}" ]]; then
+    log_error "smoke require-origin：'${dir}' 没有 origin，拒绝在未知 remote 上运行冒烟。"
+    exit 1
+  fi
+  want="$(normalize_repo_url "${sandbox}")"
+  actual="$(normalize_repo_url "${actual}")"
+  if [[ "${actual}" != "${want}" ]]; then
+    log_error "smoke require-origin：origin 指向 '${actual}'，不是沙箱 '${want}'。"
+    log_error "拒绝运行：真实仓库上跑冒烟会污染真实数据（#87 事故）。"
+    exit 1
+  fi
+  log_info "origin 指向沙箱：${want}"
+}
+
+# ---------------------------------------------------------------------------
 # workspace status：只读报告工作区隔离状态。不联网、无副作用。
 # ---------------------------------------------------------------------------
 cmd_workspace_status() {
@@ -2511,6 +2677,28 @@ main() {
       [[ $# -ge 1 && $# -le 2 ]] || usage
       _iloop_evt_arm "guard" "${2:-}"
       cmd_guard "$@"
+      ;;
+    smoke)
+      # 冒烟沙箱辅助（环境级操作，不限角色）。子命令参数校验在各分支内完成。
+      if [[ $# -lt 1 ]]; then
+        usage
+      fi
+      local ssub="$1"
+      shift
+      case "${ssub}" in
+        sandbox)
+          [[ $# -ge 1 ]] || usage
+          local saction="$1"
+          shift
+          case "${saction}" in
+            create) cmd_smoke_sandbox_create "$@" ;;
+            delete) cmd_smoke_sandbox_delete "$@" ;;
+            *) log_error "未知 smoke sandbox 动作：'${saction}'（合法：create delete）。"; exit 1 ;;
+          esac
+          ;;
+        require-origin) cmd_smoke_require_origin "$@" ;;
+        *) log_error "未知 smoke 动作：'${ssub}'（合法：sandbox require-origin）。"; exit 1 ;;
+      esac
       ;;
     workspace)
       # 工作区隔离（环境级操作，不限角色）。子命令各自的参数校验在其分支内完成。

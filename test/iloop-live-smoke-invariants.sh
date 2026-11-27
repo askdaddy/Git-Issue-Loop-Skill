@@ -83,29 +83,43 @@ cleanup() {
 trap cleanup EXIT
 
 # ---------------------------------------------------------------------------
-# Sandbox preflight: reachable or FAIL (never silently downgraded to skip).
-# ---------------------------------------------------------------------------
-if ! gh repo view "$SMOKE_REPO" --json name >/dev/null 2>&1; then
-  echo "FAIL live smoke: sandbox repo '$SMOKE_REPO' is unreachable or not authorized."
-  echo "FAIL live smoke: check that ILOOP_SMOKE_REPO names a disposable repo you own."
-  exit 1
-fi
-echo "PASS sandbox repo reachable: $SMOKE_REPO"
-
-# ---------------------------------------------------------------------------
 # Isolate: a throwaway git repo whose origin is the sandbox, so git-ops.sh
 # routes to the sandbox and never writes through this repository's remote.
+#
+# The host is resolved from the CLI that will run, not hardcoded to github.com
+# (#95). `smoke require-origin` then re-checks the result before any write.
 # ---------------------------------------------------------------------------
 SANDBOX="$WORK/sandbox"
 mkdir -p "$SANDBOX"
 git -C "$SANDBOX" init -q
-git -C "$SANDBOX" remote add origin "https://github.com/${SMOKE_REPO}.git"
 
-origin_url="$(git -C "$SANDBOX" remote -v | awk '/\(fetch\)/{print $2; exit}')"
-case "$origin_url" in
-  *"/${SMOKE_REPO}.git") pass "throwaway origin points at the sandbox" ;;
-  *) fail "throwaway origin does not point at the sandbox ($origin_url)" ;;
-esac
+if [[ "$SMOKE_REPO" == http://* || "$SMOKE_REPO" == https://* ]]; then
+  sandbox_url="$SMOKE_REPO"
+else
+  sandbox_host="github.com"
+  case "$(bash "$GITOPS" platform 2>/dev/null | tail -1)" in
+    tea)  host_line="$(tea login list 2>/dev/null | sed -n 's|.*\(https\{0,1\}://[^ ]*\).*|\1|p' | head -1)"
+          [[ -n "$host_line" ]] && sandbox_host="${host_line#*://}" ;;
+    glab) sandbox_host="${GITLAB_HOST:-gitlab.com}" ;;
+  esac
+  sandbox_url="https://${sandbox_host}/${SMOKE_REPO}"
+fi
+git -C "$SANDBOX" remote add origin "${sandbox_url%.git}.git" 2>/dev/null || true
+
+# Reachability through the same wrapper the run will use.
+if ! ( cd "$SANDBOX" && bash "$GITOPS" issue list --state open ) >/dev/null 2>&1; then
+  echo "FAIL live smoke: sandbox repo '$SMOKE_REPO' is unreachable or not authorized."
+  echo "FAIL live smoke: check that ILOOP_SMOKE_REPO names a disposable repo you own,"
+  echo "FAIL live smoke: or create one with: git-ops.sh smoke sandbox create"
+  exit 1
+fi
+echo "PASS sandbox repo reachable: $SMOKE_REPO"
+
+if bash "$GITOPS" smoke require-origin "$SANDBOX" "$sandbox_url" >/dev/null 2>&1; then
+  pass "throwaway origin points at the sandbox"
+else
+  fail "throwaway origin does not point at the sandbox"
+fi
 
 run_ops() { ( cd "$SANDBOX" && bash "$GITOPS" "$@" ); }
 
