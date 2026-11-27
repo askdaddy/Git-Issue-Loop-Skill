@@ -24,9 +24,19 @@ chk() { if [[ "$1" -eq 0 ]]; then pass "$2"; else fail "$2"; fi; }
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-# Real-repo state snapshots, to prove this test leaves no trace (step 10 AC8/AC9).
-REAL_WT_BEFORE="$(git -C "$ROOT" worktree list | wc -l | tr -d ' ')"
-REAL_STATUS_BEFORE="$(git -C "$ROOT" status --porcelain)"
+# Real-repo residue checks (step 10 AC8/AC9). These are DIRECTIONAL, not whole-repo
+# snapshots: other Agent sessions (e.g. a Codex worktree under ~/.codex) add and
+# remove worktrees in the same real repository, and a plain before/after equality
+# on the global count fails through no fault of this suite (#91).
+#
+# What this suite must never do is *add* anything. It is read-only on $ROOT: every
+# git-ops call below runs in $REPO or $WORK, never in $ROOT (asserted in step 10b).
+real_skill_worktrees() {
+  git -C "$ROOT" worktree list --porcelain 2>/dev/null \
+    | sed -n 's|^worktree ||p' | grep '/\.iloop-worktrees/' | sort
+}
+REAL_WT_BEFORE="$(real_skill_worktrees)"
+REAL_STATUS_BEFORE="$(git -C "$ROOT" status --porcelain | sort)"
 
 RC=0; OUT=""
 # run <cwd> <args...>: black-box invocation of the same entry point Agents use.
@@ -491,14 +501,26 @@ run "$WORK/wt-main" workspace start 131
 #############################################################################
 echo "=== step 10 AC8/AC9: no residue in the real repository ==="
 
-REAL_WT_AFTER="$(git -C "$ROOT" worktree list | wc -l | tr -d ' ')"
-REAL_STATUS_AFTER="$(git -C "$ROOT" status --porcelain)"
-[[ "$REAL_WT_BEFORE" == "$REAL_WT_AFTER" ]] \
-  && pass "step10-AC8 real repo worktree count unchanged ($REAL_WT_BEFORE)" \
-  || fail "step10-AC8 real repo worktree count $REAL_WT_BEFORE -> $REAL_WT_AFTER"
-[[ "$REAL_STATUS_BEFORE" == "$REAL_STATUS_AFTER" ]] \
-  && pass "step10-AC9 real repo status --porcelain unchanged" \
-  || { fail "step10-AC9 real repo was modified"; echo "  before=[$REAL_STATUS_BEFORE]"; echo "  after=[$REAL_STATUS_AFTER]"; }
+REAL_WT_AFTER="$(real_skill_worktrees)"
+REAL_STATUS_AFTER="$(git -C "$ROOT" status --porcelain | sort)"
+
+# Only *new* entries count: an external session removing one is not this suite's doing.
+WT_ADDED="$(comm -13 <(printf '%s\n' "$REAL_WT_BEFORE") <(printf '%s\n' "$REAL_WT_AFTER") | grep -v '^$' || true)"
+[[ -z "$WT_ADDED" ]] \
+  && pass "step10-AC8 real repo gained no skill worktree ($(printf '%s\n' "$REAL_WT_BEFORE" | grep -c . || true) pre-existing)" \
+  || { fail "step10-AC8 real repo gained skill worktrees"; printf '%s\n' "$WT_ADDED" | sed 's/^/  + /'; }
+
+STATUS_ADDED="$(comm -13 <(printf '%s\n' "$REAL_STATUS_BEFORE") <(printf '%s\n' "$REAL_STATUS_AFTER") | grep -v '^$' || true)"
+[[ -z "$STATUS_ADDED" ]] \
+  && pass "step10-AC9 real repo gained no dirty paths" \
+  || { fail "step10-AC9 real repo was modified by this run"; printf '%s\n' "$STATUS_ADDED" | sed 's/^/  + /'; }
+
+# Structural backing for the above: this suite never runs git-ops.sh inside $ROOT.
+if grep -Eq 'run[[:space:]]+"\$ROOT"|cd[[:space:]]+"\$ROOT"' "${BASH_SOURCE[0]}"; then
+  fail "step10-AC11 suite invokes git-ops.sh inside the real repository"
+else
+  pass "step10-AC11 suite never runs git-ops.sh inside the real repository"
+fi
 
 if [[ "$FAILS" -ne 0 ]]; then
   echo "RESULT FAIL count=$FAILS"
