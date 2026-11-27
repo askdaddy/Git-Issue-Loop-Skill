@@ -125,6 +125,11 @@ assert_grep "${ROOT}/README.md" '/iloop exit' "English README documents exit"
 assert_no_grep "${ROOT}/README.md" '^[[:space:]]*-[[:space:]]*[0-9]+ shell invariant suites' \
   "English README carries no literal suite count"
 assert_grep "${ROOT}/README.md" 'invariant suites under' "English README still points at test/"
+# The Chinese README drifted once: #86 fixed only the English sentence and left
+# "26 组" behind. Guard both languages with the same rule.
+assert_no_grep "${ROOT}/README_CN.md" '^[[:space:]]*-.*`test/` 下[[:space:]]*[0-9]+[[:space:]]*组' \
+  "Chinese README carries no literal suite count"
+assert_grep "${ROOT}/README_CN.md" 'shell 不变量测试' "Chinese README still points at test/"
 
 # The inventory's source of truth is the filesystem, so it must be non-empty.
 suite_count="$(find "${ROOT}/test" -maxdepth 1 -name '*.sh' -type f | wc -l | tr -d ' ')"

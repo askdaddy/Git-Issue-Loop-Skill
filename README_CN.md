@@ -31,7 +31,7 @@ Skill 通过官方 CLI 支持 GitHub、GitLab、Gitea 和 Forgejo：分别是 `g
 - 离线纠错反馈：全局队列放在 Skill 安装目录之外，跨会话保留问题；闭环终点或 buffer 挂起/退出时，待上报队列非空才询问，逐条授权后上报。角色操作被拒绝、工作区越界或证据缺失时，仍先纠偏并使用既有有限字段草稿。
 - 可选的结构化运行输出：`issue priority`、`issue status`、`issue comment`、`guard` 可在调用者预先打开的 fd3 上输出一条 NDJSON 事件（`ILOOP_EVENTS_FD=3`）；并提供区分「脚本观察事实 / Agent 声明 / 未验证」的阶段摘要模板（`templates/run-summary.md`）。默认关闭：不写本地事件日志、不联网，不改变 stdout、stderr 与退出码。契约见[运行时输出](references/runtime-output.md)。
 - QA 通过核验后的 PR 交付，合并与发布另需授权；PR base 默认仓库默认分支，可用 `--base <branch>` 指定非默认集成分支。仅本地交付时 Issue 保持 open。
-- `test/` 下 26 组 shell 不变量测试，覆盖 stub CLI 行为与契约检查；第三方接入场景走查属于协议审阅，不等同于独立 Agent 端到端测试。
+- `test/` 下 shell 不变量测试，覆盖 stub CLI 行为与契约检查；第三方接入场景走查属于协议审阅，不等同于独立 Agent 端到端测试。此处不写具体数量：数字会在 `test/` 变化时立刻过期，且两个并行分支各加一组时会静默合并成错误数量（#86）。
 
 ## 第三方 Issue 接入
 

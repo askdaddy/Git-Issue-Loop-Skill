@@ -179,3 +179,19 @@ Token 获取：Gitea/Forgejo → Settings → Applications → **Generate New To
 列表读取失败时不盲目创建。创建失败后仍尝试添加：若添加成功，说明标签实际存在（例如并发创建或列表未覆盖）；两步都失败时返回非零并报告创建前置错误与添加失败。优先级、状态、重试与认领受管族不通过该路径补建，继续使用专用命令。
 
 以上行为有 stub CLI 回归覆盖；真实 gh/glab/tea 网络环境及版本差异仍须按实际 CLI 输出核验，不能以测试夹具代替平台实测。
+
+## 冒烟沙箱
+
+对真实平台执行写操作的冒烟必须只落在**一次性沙箱仓库**上，而那需要你先授权建立：
+
+```bash
+./scripts/git-ops.sh smoke sandbox create [--name <n>]   # 建私有沙箱，输出 owner/repo
+./scripts/git-ops.sh smoke sandbox delete <repo> --yes   # 用完删除
+./scripts/git-ops.sh smoke require-origin <dir> <沙箱>   # 运行前硬闸
+```
+
+- 默认名带 `iloop-smoke-<UTC>`；`--name` 也必须含 `iloop-smoke`，否则拒绝。
+- `delete` 必须显式 `--yes`，且名字含 `iloop-smoke`；真实仓库名一律拒绝，防误删。
+- **`require-origin` 是硬闸**：fixture 的 `origin` 不指向沙箱时直接失败，绝不回退到真实仓库。缺这道闸时，fixture 临时目录被清理后 `origin` 回退，诊断命令改掉了真实 Issue（#87）。
+- 删除仓库需要额外 scope：GitHub 的 token 通常只有 `repo`，删除还要 `delete_repo`；缺失时 `delete` 会给出 `gh auth refresh -h github.com -s delete_repo`，残留沙箱须手工清理。
+- glab / tea 的实跑尚未验证；本节的命令按平台路由，但不保证 glab 侧已实测。
