@@ -25,23 +25,30 @@ with calls.open('a') as f:f.write(json.dumps([tool,*args])+'\n')
 mode=os.environ.get('MODE','ok');target=os.environ.get('TARGET','issue')
 n=args[2] if tool!='tea' and len(args)>2 else (args[1] if len(args)>1 else '')
 if tool=='tea' and args[:2]==['login','list']:print('https://gitea.example.com user token');sys.exit()
-type_probe=(tool=='gh' and args[:2] in [['issue','view'],['pr','view']] and 'number,url' in args) or (tool=='glab' and args[:2]==['issue','view'] and '--jq' in args and '__ILOOP_LABELS_OK__' not in args[args.index('--jq')+1]) or (tool=='tea' and 'index,kind,url' in args)
+type_probe=(tool=='gh' and args[:2] in [['issue','view'],['pr','view']] and 'number,url' in args) or (tool=='glab' and args[:2]==['issue','view'] and '--jq' in args and '__ILOOP_LABELS_OK__' not in args[args.index('--jq')+1]) or (tool=='tea' and '--output' in args and 'json' in args and any('url' in a for a in args))
 if type_probe:
  if target=='unavailable':sys.exit(3)
  if tool=='gh' and args[0]=='pr' and target not in ['pr','pr-fallback']:sys.exit(1)
  if target=='pr-fallback' and tool=='gh' and args[0]=='issue':sys.exit(1)
  if tool=='tea':
   if target=='unknown':print('unsupported output');sys.exit()
-  k='Issue' if target=='issue' else 'Pull'; segment='issues' if target=='issue' else 'pulls'
+  segment='issues' if target=='issue' else 'pulls'
   if mode=='wrong-number':n='999'
-  if mode=='wrong-kind':k='unknown'
-  print('index\tkind\turl');print(f'{n}\t{k}\thttps://gitea.example.com/o/r/{segment}/{n}')
-  if mode=='extra-row':print('2\tIssue\thttps://gitea.example.com/o/r/issues/2')
+  if mode=='wrong-kind':
+   # JSON without an "index" field cannot be trusted as this issue.
+   print(json.dumps({'id': 1, 'title': 'no index field'}))
+  elif mode=='extra-row':
+   # Two objects: an ambiguous response must not be resolved to one issue.
+   print(json.dumps({'index': int(n), 'url': f'https://gitea.example.com/o/r/issues/{n}'}))
+   print(json.dumps({'index': 2, 'url': 'https://gitea.example.com/o/r/issues/2'}))
+  else:
+   print(json.dumps({'id': int(n) + 100, 'index': n, 'title': 'stub', 'state': 'open',
+                     'url': f'https://gitea.example.com/o/r/{segment}/{n}'}))
  else:
   print('issue' if target=='issue' else ('pull-request' if target in ['pr','pr-fallback'] else 'unknown'))
  sys.exit()
 labels=state.read_text().splitlines()
-reading=(tool in ['gh','glab'] and args[:2]==['issue','view']) or (tool=='tea' and len(args)>1 and args[0]=='issues' and args[1]!='edit')
+reading=(tool in ['gh','glab'] and args[:2]==['issue','view']) or (tool=='tea' and len(args)>1 and args[0]=='issues' and args[1]!='edit' and any('labels' in a for a in args))
 if reading:
  counter=pathlib.Path(os.environ['READS']);i=int(counter.read_text())+1;counter.write_text(str(i))
  if mode=='read-fail' or (mode=='readback-fail' and i>1):sys.exit(4)

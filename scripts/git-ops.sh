@@ -669,21 +669,17 @@ raw_issue_list() {
       ;;
     tea)
       require_cli tea
-      log_debug "tea 列表输出不含标签列，已降级：--status / --priority 筛选在本平台不可用。" >&2
-      # tea 的 --state 仅支持 open / closed；all 时不传该参数
-      if [[ "${state}" == "all" ]]; then
-        tea_cmd issues 2>/dev/null \
-          | sed -n 's/#\([0-9][0-9]*\)[[:space:]][[:space:]]*\(.*\)$/\1	\2/p' \
-          | while IFS="$(printf '\t')" read -r n t; do
-              printf '%s\t%s\t%s\t\n' "${n}" "${state}" "${t}"
-            done
-      else
-        tea_cmd issues --state "${state}" 2>/dev/null \
-          | sed -n 's/#\([0-9][0-9]*\)[[:space:]][[:space:]]*\(.*\)$/\1	\2/p' \
-          | while IFS="$(printf '\t')" read -r n t; do
-              printf '%s\t%s\t%s\t\n' "${n}" "${state}" "${t}"
-            done
-      fi
+      # tea 0.16+ 的默认/表格输出是框线表格（`│ 1 │ ... │`），旧正则要求 `#1 `
+      # 前缀，结果恒零匹配、列表误报为空（Issue #87）。改用机读 TSV：
+      #   index\ttitle\tstate\tlabels
+      # 空 labels 保留为空列，与 gh 的第四列语义一致（--status/--priority 仍不可筛选）。
+      tea_cmd issues --state "${state}" --output tsv \
+        --fields index,title,state,labels 2>/dev/null \
+        | sed -e '1d' \
+        | while IFS="$(printf '\t')" read -r n t st tags; do
+            [[ -z "${n}" ]] && continue
+            printf '%s\t%s\t%s\t%s\n' "${n}" "${st}" "${t}" "${tags}"
+          done
       ;;
   esac
 }
@@ -981,22 +977,29 @@ require_issue_target() {
         "if .iid == ${num} and ((.web_url | endswith(\"/-/issues/${num}\")) or (.web_url | endswith(\"/-/issues/${num}/\")) or (.web_url | endswith(\"/-/work_items/${num}\")) or (.web_url | endswith(\"/-/work_items/${num}/\"))) then \"issue\" elif .iid == ${num} and ((.web_url | endswith(\"/-/merge_requests/${num}\")) or (.web_url | endswith(\"/-/merge_requests/${num}/\"))) then \"pull-request\" else \"unknown\" end" 2>/dev/null)" || kind=unknown
       ;;
     tea)
-      # 只请求固定字段，拒绝旧版本忽略格式、额外行、错编号或未知 kind。
-      if out="$(tea_cmd issues "${num}" --output tsv --fields index,kind,url 2>/dev/null)"; then
-        kind=unknown
-        while IFS= read -r line; do
-          line="${line%$'\r'}"
-          [[ -n "${line}" ]] || continue
-          [[ "${line}" != $'index\tkind\turl' && "${line}" != $'INDEX\tKIND\tURL' ]] || continue
-          count=$((count + 1))
-          IFS=$'\t' read -r idx item_kind url extra <<< "${line}"
-          [[ "${idx}" == "${num}" && -z "${extra}" ]] || continue
-          case "${item_kind}:${url}" in
-            issue:http*/issues/"${num}"|Issue:http*/issues/"${num}") kind=issue ;;
-            pull:http*/pulls/"${num}"|Pull:http*/pulls/"${num}"|pull-request:http*/pulls/"${num}") kind=pull-request ;;
+      # `tea issues <N>`（详情）会忽略 --output tsv，只认 --output json（实测 0.16.0），
+      # 所以这里走 JSON 而不是 TSV（旧写法恒失败，标签写入被一律拒绝 —— Issue #87）。
+      # 判据：JSON 顶层的 "index" 必须等于目标编号；字段缺失或读取失败即 unknown。
+      if out="$(tea_cmd issues "${num}" --output json --fields index,url 2>/dev/null)" \
+         && printf '%s\n' "${out}" | grep -Eq '"index"[[:space:]]*:'; then
+        # index 可为 JSON 数字（`"index": 1`）或字符串（`"index": "1"`）。
+        # 不用可选的引号组：BSD/GNU sed 对 `\{0,1\}` 的可选匹配行为不一致。
+        idx_all="$(printf '%s\n' "${out}" \
+          | sed -n -e 's/.*"index"[[:space:]]*:[[:space:]]*"\([0-9][0-9]*\)".*/\1/p' \
+                    -e 's/.*"index"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p')"
+        # 必须恰好一个对象：多条响应是歧义的，不能取第一条当结论。
+        [[ "$(printf '%s\n' "${idx_all}" | grep -c .)" -eq 1 ]] || idx_all=""
+        idx="${idx_all}"
+        # 与 gh/glab 同构：用 url 末尾区分 Issue 与 Pull Request（tea 详情没有 kind 字段）。
+        url="$(printf '%s\n' "${out}" \
+          | sed -n 's/.*"url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+        if [[ "${idx}" == "${num}" ]]; then
+          case "${url}" in
+            */issues/"${num}") kind=issue ;;
+            */pulls/"${num}")  kind=pull-request ;;
+            *)                 kind=unknown ;;
           esac
-        done <<< "${out}"
-        [[ "${count}" -eq 1 ]] || kind=unknown
+        fi
       fi
       ;;
   esac

@@ -71,9 +71,13 @@ chmod +x "$WORK/glabbin/glab"
 mkdir -p "$WORK/teabin"
 cat > "$WORK/teabin/tea" <<'STUB'
 #!/usr/bin/env bash
-# Known positive Issue metadata for #37; label-read failure modes remain independent.
-if [[ "${1:-}" == issues && " $* " == *" --fields index,kind,url "* ]]; then
-  printf '%s\tIssue\thttps://gitea.example.com/o/r/issues/%s\n' "$2" "$2"
+# Real `tea issues <N> --output json` shape recorded from gitea 0.16.0 (#87).
+# The old stub emitted `index\tIssue\t<url>` TSV, which is not what tea prints;
+# replaying the real JSON is what stops "stub green, live broken".
+if [[ "${1:-}" == issues && " $* " == *" --output json "* && "${2:-}" =~ ^[0-9]+$ ]]; then
+  [[ "${STUB_LOG:-}" ]] && echo "$*" >> "${STUB_LOG}"
+  printf '{\n\t"id": %s,\n\t"index": %s,\n\t"title": "stub issue %s",\n\t"state": "open",\n\t"url": "https://gitea.example.com/o/r/issues/%s"\n}\n' \
+    "$(( ${2} + 100 ))" "${2}" "${2}" "${2}"
   exit 0
 fi
 [[ "${1:-} ${2:-}" == "login list" ]] && { echo "https://gitea.example.com user <token>"; exit 0; }
