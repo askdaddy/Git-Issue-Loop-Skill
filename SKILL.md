@@ -79,7 +79,7 @@ description: >-
 - `等待` 必须具体到用户能直接回答的事项，禁止只写"等待用户"。
 - 挂起不是终态：不关闭 Issue、不设 `riper-blocked`（除非确有阻塞）、不释放认领；也不得自行假设用户答复继续。
 - 恢复后的第一条消息输出 `[iloop-buffer] … 恢复:<§3.x 步骤>`（可省略 `等待:`），说明下一步后继续；同一挂起点不必每轮重复状态头。
-- 挂起时若全局反馈待上报队列非空（`bash <Skill根>/scripts/feedback.sh list`），在同一消息内附带询问一次是否按 §3.8 上报；空队列零打扰，不为询问单独挂起。
+- 挂起时若全局反馈待上报队列非空（`bash <Skill根>/scripts/feedback.sh list`），在同一消息内附带询问一次是否按 §3.8 上报；仅 pending 非空才询问；空队列与仅有已上报条目的情况零打扰（后者 stdout 仍为 `0`，提示只在 stderr）。
 - 需要写回阶段摘要时，按 [运行时输出契约](references/runtime-output.md) 的 `pause` / `resume` 节点处理并关联前序 `run_id`；buffer 状态头不能替代该摘要。
 
 **退出协议（仅显性退出触发）**：
@@ -89,7 +89,7 @@ description: >-
 3. 认领默认保留（退出 buffer ≠ 放弃 Issue）；摘要中给出 `./scripts/git-ops.sh issue claim <N> release`，仅当用户明示"退出并释放 / 放弃"时才执行释放。
 4. 挂起在 [G] 草稿或自动挑选确认时，退出即丢弃未创建的草稿或候选，不留下 Issue。
 5. 退出后 Issue 标签仍是跨会话的事实来源；新会话需重新 `/iloop <N>` 或自然语言触发。
-6. 退出前若全局反馈待上报队列非空（`feedback.sh list`），在交接摘要之后询问一次是否按 §3.8 上报（拒绝=`dismiss`，"以后再说"=保持 pending；空队列零打扰）。
+6. 退出前若全局反馈待上报队列非空（`feedback.sh list`），在交接摘要之后询问一次是否按 §3.8 上报（拒绝=`dismiss`，"以后再说"=保持 pending；仅 pending 非空才询问，stdout 为 `0` 时看 stderr 的「另有 N 条」提示）。
 
 **边界**：buffer 只决定"本轮输入如何解释"，不改 §3.0.1 状态分发、T0 铁律、权限矩阵，也不替代 Issue 的唯一事实来源地位。远端证据与 buffer 记忆冲突时，以严格重读的 Issue 为准；buffer 不得用于绕过认领、重试或阶段保护。不新增本地状态文件（唯一例外：§3.8 全局反馈队列——它是用户授权沉淀的用户数据，不是 buffer 状态）。
 
@@ -473,7 +473,7 @@ PR 详情只读 `integration pr-view PR编号` 允许三角色；外部贡献按
   3. QA 按 [集成契约](references/integration.md) 执行 `integration push <N>`、PR 查重/创建/回读，并将 URL、base/head 与已验收提交评论回 Issue；默认不自动合并。离线或无推送权限仅本地合并仍保持 open，无法继续则报告并按权限转 blocked。
   4. 仅在 PR 交付已确认（或有已进上游证据）后，由 QA 执行 `./scripts/git-ops.sh --role reviewer issue close <N>` 关闭 Issue（关闭权专属 QA），结束循环；
   5. 释放认领：`./scripts/git-ops.sh issue claim <N> release`（移除 `riper-claimed` + 释放评论；闭环终态不再占用该 Issue）。
-  6. 闭环终点反馈询问：`bash <Skill根>/scripts/feedback.sh list` 若待上报队列非空，向用户呈报一次并询问是否按 §3.8 上报（拒绝=`dismiss`，"以后再说"=保持 pending；空队列零打扰）。
+  6. 闭环终点反馈询问：`bash <Skill根>/scripts/feedback.sh list` 若待上报队列非空，向用户呈报一次并询问是否按 §3.8 上报（拒绝=`dismiss`，"以后再说"=保持 pending；仅 pending 非空才询问，stdout 为 `0` 时看 stderr 的「另有 N 条」提示）。
 - **无法验证且无已确认 FAIL**：不设置 verified、不关闭、不增加 retry；报告缺失环境/证据、已完成项与恢复条件。无法推进时由开发/QA 按权限转 blocked 并释放认领，恢复后严格重读与分发。
 - **存在已确认 FAIL**（即使同时有无法验证项）：
   1. 登记重试计数（**防死循环：最多重试 3 次**）：`./scripts/git-ops.sh --role reviewer issue retry <N> incr`（排他写入 `riper-retry-K`，不依赖 Agent 记忆）；
